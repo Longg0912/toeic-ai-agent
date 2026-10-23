@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0",
+  "description": "Các bản sửa đã được đối chiếu thủ công trước khi chuẩn hóa dữ liệu.",
+  "corrections": {
+    "P5-073": {
+      "status": "verified",
+      "evidence_file": "question-bank-v210.js",
+      "verification_note": "question-bank.js có answer=2 (C), còn bản sửa v210 có answer=1 (B). Giải thích của bản sửa phù hợp với cấu trúc đảo ngữ Not until.",
+      "changes": {
+        "answer": 1,
+        "explanation": "先還原正常語序：The building was open to the public only after the final inspection。Not until 置首後，主句的 be 動詞移到主詞前，成為 was the building open。空格後已經有主詞 the building，因此 was it 會形成 it the building 的雙主詞錯誤。",
+        "tags": [
+          "reading",
+          "grammar",
+          "inversion",
+          "negative-fronting",
+          "be-inversion"
+        ]
+      }
+    }
+  }
+}

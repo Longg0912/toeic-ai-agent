@@ -12,7 +12,7 @@ from backend.app.db.session import DATABASE_URL, make_engine
 
 # Import ORM models so they register with Base.metadata.
 import backend.app.db.models  # noqa: F401
-
+import os
 
 # Alembic configuration object
 config = context.config
@@ -45,15 +45,69 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    """Execute migrations using an existing connection."""
+    """Run migrations with optional SQLite FK protection."""
 
-    context.configure(
-        connection=connection,
-        target_metadata=target_metadata,
-        compare_type=True,
-        compare_server_default=True,
-        render_as_batch=True,
+    sqlite_fk_disabled = False
+    dbapi_connection = None
+
+    disable_sqlite_fk = (
+        connection.dialect.name == "sqlite"
+        and os.getenv("ALEMBIC_SQLITE_FK_OFF") == "1"
     )
+
+    # Disable foreign keys before Alembic starts its transaction.
+    if disable_sqlite_fk:
+        dbapi_connection = connection.connection.driver_connection
+
+        dbapi_connection.execute("PRAGMA foreign_keys=OFF")
+
+        fk_status = dbapi_connection.execute(
+            "PRAGMA foreign_keys"
+        ).fetchone()[0]
+
+        if fk_status != 0:
+            raise RuntimeError(
+                "Could not disable SQLite foreign keys safely."
+            )
+
+        sqlite_fk_disabled = True
+
+    try:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+            compare_server_default=True,
+            render_as_batch=True,
+        )
+
+        with context.begin_transaction():
+            context.run_migrations()
+
+        # Verify every foreign key before finishing.
+        if sqlite_fk_disabled:
+            violations = dbapi_connection.execute(
+                "PRAGMA foreign_key_check"
+            ).fetchall()
+
+            if violations:
+                raise RuntimeError(
+                    "Foreign-key violations after migration: "
+                    f"{violations!r}"
+                )
+
+    finally:
+        if sqlite_fk_disabled:
+            dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+            fk_status = dbapi_connection.execute(
+                "PRAGMA foreign_keys"
+            ).fetchone()[0]
+
+            if fk_status != 1:
+                raise RuntimeError(
+                    "SQLite foreign keys could not be re-enabled."
+                )
 
     with context.begin_transaction():
         context.run_migrations()

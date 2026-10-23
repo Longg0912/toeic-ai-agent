@@ -191,7 +191,7 @@ class Question(Base):
         CheckConstraint(
             "source_type IN "
             "('original', 'licensed', 'ai_generated', "
-            "'user_uploaded')",
+            "'user_uploaded', 'third_party')",
             name="ck_questions_source_type",
         ),
         CheckConstraint(
@@ -247,7 +247,11 @@ class Question(Base):
         Text,
         nullable=False,
     )
-
+    
+    explanation: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
     correct_option_key: Mapped[str] = mapped_column(
         String(1),
         nullable=False,

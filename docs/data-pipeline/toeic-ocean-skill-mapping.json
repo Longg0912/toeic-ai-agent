@@ -1,0 +1,15 @@
+
+{
+  "schema_version": "1.0",
+  "description": "Ánh xạ bảo thủ từ source_tags của TOEIC Question Ocean sang các kỹ năng đã tồn tại trong database. Tag không có trong danh sách sẽ không được tự động gán.",
+  "tag_to_skill": {
+    "word-form": "GRAMMAR_WORD_FORM",
+    "present-perfect": "GRAMMAR_TENSES",
+    "past-perfect": "GRAMMAR_TENSES",
+    "subject-verb": "GRAMMAR_SUBJECT_VERB_AGREEMENT",
+    "preposition": "GRAMMAR_PREPOSITIONS",
+    "because-of": "GRAMMAR_PREPOSITIONS",
+    "be-adj-prep": "GRAMMAR_PREPOSITIONS",
+    "prep-relative": "GRAMMAR_PREPOSITIONS"
+  }
+}
