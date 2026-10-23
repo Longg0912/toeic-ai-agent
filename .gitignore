@@ -1,0 +1,66 @@
+# Python virtual environments
+.venv/
+venv/
+env/
+.venv_failed*/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Test and development cache
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Credentials and private keys
+*.pem
+*.key
+*.p12
+*.pfx
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Private datasets and learning materials
+/data/**
+
+# Allow directories and .gitkeep placeholders
+!/data/**/
+!/data/**/.gitkeep
+
+# Logs and temporary files
+*.log
+logs/
+*.tmp
+*.temp
+
+# Local experiment outputs
+experiments/outputs/
+experiments/artifacts/
+
+# IDE and operating system
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Streamlit secrets
+.streamlit/secrets.toml
