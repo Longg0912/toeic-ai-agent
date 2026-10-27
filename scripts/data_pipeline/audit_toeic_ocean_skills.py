@@ -21,7 +21,7 @@ DEFAULT_REPORT = (
     ROOT / "data" / "processed" / "toeic-ocean-skill-audit-report.json"
 )
 
-EXPECTED_REVISION = "b7e4c91a2d63"
+EXPECTED_REVISION = "c4d8e2a91f70"
 
 GENERIC_TAGS = {"grammar", "reading", "vocabulary"}
 
