@@ -13,6 +13,8 @@ TAG_TO_SKILL = {
     "because-of": "GRAMMAR_PREPOSITIONS",
     "be-adj-prep": "GRAMMAR_PREPOSITIONS",
     "prep-relative": "GRAMMAR_PREPOSITIONS",
+    "business-verb": "VOCAB_BUSINESS",
+    "vocabulary": "VOCAB_BUSINESS",
 }
 
 
@@ -80,7 +82,7 @@ def test_preserves_unmapped_tags_for_review():
     assert unmapped["inversion"] == 1
 
 
-def test_does_not_guess_business_vocabulary():
+def test_maps_business_vocabulary_to_business_skill():
     plan, _, _ = build_mapping_plan(
         [
             make_record(
@@ -91,8 +93,7 @@ def test_does_not_guess_business_vocabulary():
         TAG_TO_SKILL,
     )
 
-    assert plan[0]["skill_codes"] == []
-
+    assert plan[0]["skill_codes"] == ["VOCAB_BUSINESS"]
 
 def test_case_and_whitespace_are_normalized():
     plan, _, _ = build_mapping_plan(

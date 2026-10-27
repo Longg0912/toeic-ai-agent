@@ -12,7 +12,7 @@ from typing import Any
 from backend.app.db.session import engine
 
 
-EXPECTED_REVISION = "55db8077d91e"
+EXPECTED_REVISION = "b7e4c91a2d63"
 
 DEFAULT_INPUT = Path("data/processed/toeic-ocean-part5.jsonl")
 DEFAULT_MANIFEST = Path(

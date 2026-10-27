@@ -96,7 +96,7 @@ def test_seed_creates_expected_draft_data(
 
     counts = table_counts(seed_engine)
 
-    assert counts["skills"] == 5
+    assert counts["skills"] == 16
     assert counts["questions"] == 6
     assert counts["question_options"] == 24
     assert counts["question_skills"] == 7
@@ -236,7 +236,7 @@ def test_seed_rolls_back_if_content_already_exists(
     assert counts["questions"] == 1
 
     # Skills inserted before the conflict were rolled back.
-    assert counts["skills"] == 0
+    assert counts["skills"] == 11
 
     assert counts["question_options"] == 0
     assert counts["question_skills"] == 0
