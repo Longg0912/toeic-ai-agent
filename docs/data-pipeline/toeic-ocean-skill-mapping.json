@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "description": "Ánh xạ bảo thủ từ source_tags của TOEIC Question Ocean sang các kỹ năng đã tồn tại hoặc được bổ sung trong database. Các tag quá chung hoặc chưa đủ căn cứ không được tự động gán.",
+  "description": "Ánh xạ bảo thủ từ source_tags và source_category của TOEIC Question Ocean sang các kỹ năng đã tồn tại trong database. Các tag hoặc nhóm kiến thức quá chung hay chưa đủ căn cứ không được tự động gán.",
   "tag_to_skill": {
     "according-to": "GRAMMAR_PREPOSITIONS",
     "addition": "GRAMMAR_PREPOSITIONS",
@@ -47,5 +47,31 @@
     "whose": "GRAMMAR_RELATIVE_CLAUSES",
     "within": "GRAMMAR_PREPOSITIONS",
     "word-form": "GRAMMAR_WORD_FORM"
+  },
+"category_to_skill": {
+    "介系詞": "GRAMMAR_PREPOSITIONS",
+    "商務字彙": "VOCAB_BUSINESS",
+    "詞性": "GRAMMAR_WORD_FORM",
+    "時態": "GRAMMAR_TENSES",
+    "未來完成式": "GRAMMAR_TENSES",
+    "完成式": "GRAMMAR_TENSES",
+    "比較級": "GRAMMAR_COMPARISON",
+    "關係子句": "GRAMMAR_RELATIVE_CLAUSES",
+    "關係代名詞": "GRAMMAR_RELATIVE_CLAUSES",
+    "關係副詞": "GRAMMAR_RELATIVE_CLAUSES",
+    "代名詞": "GRAMMAR_PRONOUNS",
+    "分詞構句": "GRAMMAR_PARTICIPLE_CLAUSES",
+    "倒裝": "GRAMMAR_INVERSION",
+    "連接詞": "GRAMMAR_CLAUSES_CONJUNCTIONS",
+    "名詞子句": "GRAMMAR_CLAUSES_CONJUNCTIONS",
+    "副詞子句": "GRAMMAR_CLAUSES_CONJUNCTIONS",
+    "不定詞": "GRAMMAR_INFINITIVES",
+    "動名詞": "GRAMMAR_GERUNDS",
+    "數量詞": "GRAMMAR_QUANTIFIERS_DETERMINERS",
+    "主詞動詞一致": "GRAMMAR_SUBJECT_VERB_AGREEMENT",
+    "固定搭配": "GRAMMAR_PREPOSITIONS",
+    "副詞": "GRAMMAR_WORD_FORM",
+    "分詞": "GRAMMAR_PARTICIPLE_CLAUSES",
+    "連接副詞": "GRAMMAR_CLAUSES_CONJUNCTIONS"
   }
 }

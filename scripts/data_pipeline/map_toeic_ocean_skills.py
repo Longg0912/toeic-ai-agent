@@ -12,7 +12,7 @@ from typing import Any
 from backend.app.db.session import engine
 
 
-EXPECTED_REVISION = "b7e4c91a2d63"
+EXPECTED_REVISION = "c4d8e2a91f70"
 
 DEFAULT_INPUT = Path("data/processed/toeic-ocean-part5.jsonl")
 DEFAULT_MANIFEST = Path(
@@ -77,40 +77,82 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return records
 
 
-def load_manifest(path: Path) -> dict[str, str]:
+def load_manifest(
+    path: Path,
+) -> tuple[dict[str, str], dict[str, str]]:
     with path.open("r", encoding="utf-8") as file:
         manifest = json.load(file)
 
     if manifest.get("schema_version") != "1.0":
         raise ValueError("schema_version của manifest không hợp lệ.")
 
-    mapping = manifest.get("tag_to_skill")
-    if not isinstance(mapping, dict) or not mapping:
-        raise ValueError("Manifest thiếu tag_to_skill hợp lệ.")
+    def parse_mapping(
+        field_name: str,
+        *,
+        required: bool,
+    ) -> dict[str, str]:
+        mapping = manifest.get(field_name, {})
 
-    result: dict[str, str] = {}
-
-    for tag, skill_code in mapping.items():
-        if not isinstance(tag, str) or not tag.strip():
-            raise ValueError("Manifest có tag rỗng hoặc không hợp lệ.")
-
-        if not isinstance(skill_code, str) or not skill_code.strip():
+        if not isinstance(mapping, dict) or (
+            required and not mapping
+        ):
             raise ValueError(
-                f"Skill code không hợp lệ cho tag {tag!r}."
+                f"Manifest thiếu {field_name} hợp lệ."
             )
 
-        result[tag.strip().lower()] = skill_code.strip()
+        result: dict[str, str] = {}
 
-    return result
+        for key, skill_code in mapping.items():
+            if not isinstance(key, str) or not key.strip():
+                raise ValueError(
+                    f"Manifest có khóa rỗng hoặc không hợp lệ "
+                    f"trong {field_name}."
+                )
+
+            if (
+                not isinstance(skill_code, str)
+                or not skill_code.strip()
+            ):
+                raise ValueError(
+                    f"Skill code không hợp lệ cho "
+                    f"{field_name}[{key!r}]."
+                )
+
+            normalized_key = key.strip()
+
+            # Tag được chuẩn hóa về chữ thường.
+            # source_category giữ nguyên chữ Hán.
+            if field_name == "tag_to_skill":
+                normalized_key = normalized_key.lower()
+
+            result[normalized_key] = skill_code.strip()
+
+        return result
+
+    tag_to_skill = parse_mapping(
+        "tag_to_skill",
+        required=True,
+    )
+
+    category_to_skill = parse_mapping(
+        "category_to_skill",
+        required=False,
+    )
+
+    return tag_to_skill, category_to_skill
 
 
 def build_mapping_plan(
     records: list[dict[str, Any]],
     tag_to_skill: dict[str, str],
+    category_to_skill: dict[str, str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int], dict[str, int]]:
     plan: list[dict[str, Any]] = []
     unmapped_counts: Counter[str] = Counter()
     links_by_skill: Counter[str] = Counter()
+
+    if category_to_skill is None:
+        category_to_skill = {}
 
     for record in records:
         tags = {
@@ -122,15 +164,35 @@ def build_mapping_plan(
         mapped_tags = sorted(
             tag for tag in tags if tag in tag_to_skill
         )
+
         unmapped_tags = sorted(
             tag for tag in tags if tag not in tag_to_skill
         )
 
-        skill_codes = sorted({
+        # Ánh xạ theo source_tags trước.
+        skill_code_set = {
             tag_to_skill[tag] for tag in mapped_tags
-        })
+        }
 
+        # Bổ sung kỹ năng từ source_category.
+        raw_category = record.get("source_category")
+        source_category = (
+            str(raw_category).strip()
+            if raw_category is not None
+            else ""
+        )
+
+        category_skill = category_to_skill.get(source_category)
+
+        if category_skill:
+            skill_code_set.add(category_skill)
+
+        skill_codes = sorted(skill_code_set)
+
+        # Giữ nguyên cơ chế thống kê tag chưa được ánh xạ.
         unmapped_counts.update(unmapped_tags)
+
+        # Mỗi kỹ năng chỉ được đếm một lần cho mỗi câu hỏi.
         links_by_skill.update(skill_codes)
 
         source_record_id = str(record["source_record_id"])
@@ -140,6 +202,15 @@ def build_mapping_plan(
             "source_record_id": source_record_id,
             "source_reference": (
                 f"{source_url}#record={source_record_id}"
+            ),
+            "source_category": source_category or None,
+            "mapped_source_category": (
+                source_category if category_skill else None
+            ),
+            "unmapped_source_category": (
+                source_category
+                if source_category and not category_skill
+                else None
             ),
             "skill_codes": skill_codes,
             "unmapped_tags": unmapped_tags,
@@ -218,9 +289,18 @@ def run_mapping(
 ) -> dict[str, Any]:
     records = load_jsonl(input_path)
     tag_to_skill = load_manifest(manifest_path)
+    tag_to_skill, category_to_skill = load_manifest(manifest_path)
 
     plan, unmapped_counts, links_by_skill = build_mapping_plan(
-        records, tag_to_skill
+        records,
+        tag_to_skill,
+        category_to_skill,
+    )
+
+    unmapped_source_category_counts = Counter(
+        item["unmapped_source_category"]
+        for item in plan
+        if item["unmapped_source_category"]
     )
 
     db_path = get_database_path()
@@ -307,9 +387,11 @@ def run_mapping(
                 code for code in item["skill_codes"]
                 if code not in existing_codes
             ]
-
             resolved.append({
                 **item,
+                "source_category": item["source_category"],
+                "mapped_source_category": item["mapped_source_category"],
+                "unmapped_source_category": item["unmapped_source_category"],
                 "question_db_id": question_id,
                 "existing_mapped_skills": sorted(
                     set(item["skill_codes"]) & existing_codes
