@@ -8,7 +8,9 @@ from fastapi.responses import JSONResponse
 from backend.app.api.routes.auth import (
     router as auth_router,
 )
-
+from backend.app.api.routes.questions import (
+    router as questions_router,
+)
 
 # 1. Khởi tạo ứng dụng FastAPI
 app = FastAPI(
@@ -23,7 +25,7 @@ app = FastAPI(
 
 # 2. Đăng ký Authentication Router
 app.include_router(auth_router)
-
+app.include_router(questions_router)
 
 # 3. Xử lý lỗi HTTP 422 an toàn
 @app.exception_handler(RequestValidationError)
