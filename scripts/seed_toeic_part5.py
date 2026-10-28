@@ -2,7 +2,7 @@
 
 This script:
 - Requires the expected Alembic revision.
-- Creates skills and synthetic draft questions.
+- Creates skills and synthetic draft questions with Vietnamese explanations.
 - Never creates user accounts or passwords.
 - Never marks questions as human-approved.
 - Does not overwrite existing seed questions.
@@ -56,6 +56,7 @@ class QuestionSeed:
     content: str
     options: tuple[str, str, str, str]
     correct_option_key: str
+    explanation: str
     skill_codes: tuple[str, ...]
     difficulty: int
 
@@ -113,6 +114,13 @@ QUESTIONS: tuple[QuestionSeed, ...] = (
             "details",
         ),
         correct_option_key="B",
+        explanation=(
+            "Đáp án B – detailed. Chỗ trống đứng trước danh từ “proposal”, nên cần tính "
+            "từ bổ nghĩa cho danh từ: “a detailed proposal” (một bản đề xuất chi tiết). A "
+            "“detail” là danh từ hoặc động từ; C “detailing” là dạng V-ing, không phù hợp "
+            "vị trí này; D “details” là danh từ số nhiều hoặc động từ chia ngôi thứ ba số "
+            "ít."
+        ),
         skill_codes=(
             "GRAMMAR_WORD_FORM",
             "VOCAB_BUSINESS",
@@ -132,6 +140,13 @@ QUESTIONS: tuple[QuestionSeed, ...] = (
             "will finalize",
         ),
         correct_option_key="B",
+        explanation=(
+            "Đáp án B – had finalized. “By the time the meeting began” xác định một mốc "
+            "trong quá khứ; việc hoàn tất báo cáo xảy ra trước mốc đó nên dùng quá khứ "
+            "hoàn thành: had + V3 (had finalized). A “has finalized” là hiện tại hoàn "
+            "thành; C “finalizes” là hiện tại đơn; D “will finalize” là tương lai, không "
+            "phù hợp với mạch thời gian trong câu."
+        ),
         skill_codes=("GRAMMAR_TENSES",),
         difficulty=2,
     ),
@@ -148,6 +163,13 @@ QUESTIONS: tuple[QuestionSeed, ...] = (
             "since",
         ),
         correct_option_key="B",
+        explanation=(
+            "Đáp án dự kiến B – by. “By Friday” diễn tả hạn chót: báo cáo phải được nộp "
+            "chậm nhất vào thứ Sáu. A “at” không phù hợp trong cấu trúc này; D “since” "
+            "diễn tả mốc bắt đầu và thường đi với thì hoàn thành. Lưu ý: C “during "
+            "Friday” cũng có thể được hiểu là trong ngày thứ Sáu, nên câu gốc còn mơ hồ. "
+            "Hãy sửa câu hỏi trước khi duyệt để dùng trong bài chấm điểm chính thức."
+        ),
         skill_codes=("GRAMMAR_PREPOSITIONS",),
         difficulty=1,
     ),
@@ -164,6 +186,12 @@ QUESTIONS: tuple[QuestionSeed, ...] = (
             "were",
         ),
         correct_option_key="B",
+        explanation=(
+            "Đáp án B – is. Chủ ngữ chính là “The list” (số ít); cụm “of approved "
+            "suppliers” chỉ bổ nghĩa cho “list”, không làm chủ ngữ thành số nhiều. Vì vậy "
+            "động từ phải là “is”. A “are” và D “were” không hòa hợp với chủ ngữ số ít "
+            "trong câu này; C “have” không tạo thành vị ngữ đúng với cấu trúc đã cho."
+        ),
         skill_codes=("GRAMMAR_SUBJECT_VERB_AGREEMENT",),
         difficulty=2,
     ),
@@ -180,6 +208,12 @@ QUESTIONS: tuple[QuestionSeed, ...] = (
             "efficiencies",
         ),
         correct_option_key="C",
+        explanation=(
+            "Đáp án C – efficiently. Từ cần điền bổ nghĩa cho động từ “process”, nên cần "
+            "trạng từ: “process requests more efficiently” (xử lý yêu cầu hiệu quả hơn). "
+            "A “efficient” là tính từ; B “efficiency” là danh từ; D “efficiencies” là "
+            "danh từ số nhiều."
+        ),
         skill_codes=("GRAMMAR_WORD_FORM",),
         difficulty=1,
     ),
@@ -196,6 +230,13 @@ QUESTIONS: tuple[QuestionSeed, ...] = (
             "by",
         ),
         correct_option_key="B",
+        explanation=(
+            "Đáp án B – since. “2021” là mốc thời gian bắt đầu cụ thể, nên dùng “since "
+            "2021”. Thì hiện tại hoàn thành “has worked” diễn tả công việc bắt đầu trong "
+            "quá khứ và tiếp tục đến hiện tại. “For” thường đi với một khoảng thời gian "
+            "(ví dụ: “for five years”); “during” chỉ khoảng thời gian diễn ra sự việc; "
+            "“by” thường nêu hạn chót."
+        ),
         skill_codes=("GRAMMAR_PREPOSITIONS",),
         difficulty=1,
     ),
@@ -260,6 +301,11 @@ def validate_seed_definitions() -> None:
         if not question.content.strip():
             raise ValueError(
                 f"Empty question content: {question.key}"
+            )
+
+        if not question.explanation.strip():
+            raise ValueError(
+                f"Empty explanation: {question.key}"
             )
 
         if not 1 <= question.difficulty <= 5:
@@ -469,6 +515,7 @@ def ensure_question(
         part=5,
         content=definition.content,
         correct_option_key=definition.correct_option_key,
+        explanation=definition.explanation,
         difficulty=definition.difficulty,
         review_status="draft",
         source_type="ai_generated",
@@ -567,7 +614,7 @@ def main() -> None:
     print(f"Existing skills: {result.existing_skills}")
     print(f"Created questions: {result.created_questions}")
     print(f"Existing questions: {result.existing_questions}")
-    print("Question review status: draft")
+    print("New questions start in draft; existing review states are preserved.")
 
 
 if __name__ == "__main__":
