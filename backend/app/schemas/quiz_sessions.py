@@ -6,8 +6,8 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.schemas.questions import Part5OptionPublic
-
-
+from typing import Literal
+from datetime import datetime
 class QuizSessionCreateRequest(BaseModel):
     """Parameters for creating a TOEIC Part 5 practice session."""
 
@@ -48,3 +48,52 @@ class QuizSessionCreateResponse(BaseModel):
     started_at: datetime
     question_count: int
     items: list[QuizSessionItemPublic]
+
+class QuizSessionAnswerInput(BaseModel):
+    """One answer submitted for a quiz item."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    quiz_item_id: int = Field(gt=0)
+    selected_option_key: Literal["A", "B", "C", "D"]
+    time_spent_seconds: int | None = Field(default=None, ge=0)
+
+
+class QuizSessionSubmitRequest(BaseModel):
+    """Answers submitted for an entire quiz session."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    answers: list[QuizSessionAnswerInput] = Field(min_length=1)
+
+
+class QuizSessionSubmitItemPublic(BaseModel):
+    """Graded result for one quiz item."""
+
+    quiz_item_id: int
+    question_id: int
+    position: int
+    content: str
+    difficulty: int | None
+    options: list[Part5OptionPublic]
+    skill_codes: list[str]
+
+    selected_option_key: Literal["A", "B", "C", "D"]
+    correct_option_key: Literal["A", "B", "C", "D"]
+    is_correct: bool
+    explanation: str | None
+
+
+class QuizSessionSubmitResponse(BaseModel):
+    """Graded result for a completed quiz session."""
+
+    session_id: int
+    status: Literal["submitted"]
+    finished_at: datetime
+
+    total_questions: int
+    answered_count: int
+    correct_count: int
+    accuracy_percent: float
+
+    items: list[QuizSessionSubmitItemPublic]

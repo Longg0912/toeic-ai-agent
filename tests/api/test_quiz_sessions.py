@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.deps import get_db
 from backend.app.db.models import (
+    Attempt,
     Question,
     QuestionOption,
     QuestionSkill,
@@ -274,7 +275,9 @@ def test_create_quiz_session_saves_items_and_hides_answers(
         for item in saved_items:
             assert "correct_option_key" not in item.question_snapshot
             assert "answer_key_snapshot" not in item.question_snapshot
-            assert "explanation" not in item.question_snapshot
+            assert item.question_snapshot["explanation"] == (
+                f"Private explanation for {item.question_snapshot['content']}"
+            )
 
 
 def test_create_quiz_session_filters_by_skill(
@@ -397,3 +400,237 @@ def test_create_quiz_session_is_documented(
 
     assert "/quiz-sessions" in paths
     assert "post" in paths["/quiz-sessions"]
+
+
+def test_submit_quiz_session_grades_and_saves_attempts(
+    quiz_client: tuple[TestClient, Engine, dict[str, str]],
+) -> None:
+    """Submitting answers grades them and stores one attempt per item."""
+
+    client, engine, headers = quiz_client
+
+    create_response = client.post(
+        "/quiz-sessions",
+        json={"question_count": 2},
+        headers=headers,
+    )
+
+    assert create_response.status_code == 201
+
+    session_data = create_response.json()
+    session_id = session_data["id"]
+    items = session_data["items"]
+
+    # Test questions use B as the correct answer.
+    submit_response = client.post(
+        f"/quiz-sessions/{session_id}/submit",
+        json={
+            "answers": [
+                {
+                    "quiz_item_id": items[0]["id"],
+                    "selected_option_key": "B",
+                    "time_spent_seconds": 12,
+                },
+                {
+                    "quiz_item_id": items[1]["id"],
+                    "selected_option_key": "A",
+                    "time_spent_seconds": 8,
+                },
+            ]
+        },
+        headers=headers,
+    )
+
+    assert submit_response.status_code == 200
+
+    result = submit_response.json()
+
+    assert result["session_id"] == session_id
+    assert result["status"] == "submitted"
+    assert result["total_questions"] == 2
+    assert result["answered_count"] == 2
+    assert result["correct_count"] == 1
+    assert result["accuracy_percent"] == 50.0
+    assert len(result["items"]) == 2
+
+    graded_items = result["items"]
+
+    assert graded_items[0]["selected_option_key"] == "B"
+    assert graded_items[0]["correct_option_key"] == "B"
+    assert graded_items[0]["is_correct"] is True
+
+    assert graded_items[1]["selected_option_key"] == "A"
+    assert graded_items[1]["correct_option_key"] == "B"
+    assert graded_items[1]["is_correct"] is False
+
+    for graded_item in graded_items:
+        assert graded_item["explanation"] == (
+            f"Private explanation for {graded_item['content']}"
+        )
+        assert len(graded_item["options"]) == 4
+
+    with Session(engine) as session:
+        saved_session = session.get(QuizSession, session_id)
+
+        assert saved_session is not None
+        assert saved_session.status == "submitted"
+        assert saved_session.finished_at is not None
+
+        saved_attempts = session.scalars(
+            select(Attempt)
+            .join(QuizItem, Attempt.quiz_item_id == QuizItem.id)
+            .where(QuizItem.quiz_session_id == session_id)
+            .order_by(QuizItem.position)
+        ).all()
+
+        assert len(saved_attempts) == 2
+        assert [attempt.attempt_number for attempt in saved_attempts] == [
+            1,
+            1,
+        ]
+        assert [attempt.selected_option_key for attempt in saved_attempts] == [
+            "B",
+            "A",
+        ]
+        assert [attempt.is_correct for attempt in saved_attempts] == [
+            True,
+            False,
+        ]
+        assert [attempt.is_retry for attempt in saved_attempts] == [
+            False,
+            False,
+        ]
+        assert [
+            attempt.time_spent_seconds
+            for attempt in saved_attempts
+        ] == [12, 8]
+
+
+def test_submit_quiz_session_rejects_missing_answers(
+    quiz_client: tuple[TestClient, Engine, dict[str, str]],
+) -> None:
+    """Every quiz item must be answered before submission."""
+
+    client, engine, headers = quiz_client
+
+    create_response = client.post(
+        "/quiz-sessions",
+        json={"question_count": 2},
+        headers=headers,
+    )
+    assert create_response.status_code == 201
+
+    session_data = create_response.json()
+    first_item = session_data["items"][0]
+
+    response = client.post(
+        f"/quiz-sessions/{session_data['id']}/submit",
+        json={
+            "answers": [
+                {
+                    "quiz_item_id": first_item["id"],
+                    "selected_option_key": "B",
+                }
+            ]
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+    with Session(engine) as session:
+        saved_session = session.get(
+            QuizSession,
+            session_data["id"],
+        )
+        assert saved_session is not None
+        assert saved_session.status == "in_progress"
+
+        attempt_count = session.scalar(
+            select(func.count()).select_from(Attempt)
+        )
+        assert attempt_count == 0
+
+
+def test_submit_quiz_session_rejects_duplicate_answers(
+    quiz_client: tuple[TestClient, Engine, dict[str, str]],
+) -> None:
+    """A quiz item cannot appear twice in one submission."""
+
+    client, _, headers = quiz_client
+
+    create_response = client.post(
+        "/quiz-sessions",
+        json={"question_count": 2},
+        headers=headers,
+    )
+    assert create_response.status_code == 201
+
+    session_data = create_response.json()
+    first_item_id = session_data["items"][0]["id"]
+
+    response = client.post(
+        f"/quiz-sessions/{session_data['id']}/submit",
+        json={
+            "answers": [
+                {
+                    "quiz_item_id": first_item_id,
+                    "selected_option_key": "A",
+                },
+                {
+                    "quiz_item_id": first_item_id,
+                    "selected_option_key": "B",
+                },
+            ]
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+
+
+def test_submit_quiz_session_cannot_be_submitted_twice(
+    quiz_client: tuple[TestClient, Engine, dict[str, str]],
+) -> None:
+    """A successfully submitted session cannot be submitted again."""
+
+    client, engine, headers = quiz_client
+
+    create_response = client.post(
+        "/quiz-sessions",
+        json={"question_count": 1},
+        headers=headers,
+    )
+    assert create_response.status_code == 201
+
+    session_data = create_response.json()
+    item = session_data["items"][0]
+
+    payload = {
+        "answers": [
+            {
+                "quiz_item_id": item["id"],
+                "selected_option_key": "B",
+            }
+        ]
+    }
+
+    first_response = client.post(
+        f"/quiz-sessions/{session_data['id']}/submit",
+        json=payload,
+        headers=headers,
+    )
+    assert first_response.status_code == 200
+
+    second_response = client.post(
+        f"/quiz-sessions/{session_data['id']}/submit",
+        json=payload,
+        headers=headers,
+    )
+    assert second_response.status_code == 409
+
+    with Session(engine) as session:
+        attempt_count = session.scalar(
+            select(func.count()).select_from(Attempt)
+        )
+        assert attempt_count == 1

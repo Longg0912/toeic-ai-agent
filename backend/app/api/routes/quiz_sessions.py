@@ -24,7 +24,16 @@ from backend.app.schemas.quiz_sessions import (
     QuizSessionCreateResponse,
     QuizSessionItemPublic,
 )
+from datetime import datetime, timezone
 
+from sqlalchemy.exc import IntegrityError
+
+from backend.app.db.models import Attempt
+from backend.app.schemas.quiz_sessions import (
+    QuizSessionSubmitRequest,
+    QuizSessionSubmitResponse,
+    QuizSessionSubmitItemPublic,
+)
 
 router = APIRouter(tags=["Quiz Sessions"])
 
@@ -177,6 +186,7 @@ def create_quiz_session(
                 "difficulty": question.difficulty,
                 "options": options_data,
                 "skill_codes": skill_codes,
+                "explanation": question.explanation,
             }
 
             quiz_item = QuizItem(
@@ -244,3 +254,169 @@ def create_quiz_session(
         # Do not leave a partially created session behind.
         db.rollback()
         raise
+
+@router.post(
+    "/quiz-sessions/{session_id}/submit",
+    response_model=QuizSessionSubmitResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Submit and grade a TOEIC Part 5 quiz session",
+)
+def submit_quiz_session(
+    session_id: int,
+    payload: QuizSessionSubmitRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> QuizSessionSubmitResponse:
+    """Grade a completed set of answers and save the attempts."""
+
+    # 1. Only the owner can access the session.
+    # Return 404 for both missing sessions and sessions owned by others.
+    quiz_session = db.scalar(
+        select(QuizSession)
+        .where(
+            QuizSession.id == session_id,
+            QuizSession.user_id == current_user.id,
+        )
+        .options(selectinload(QuizSession.items))
+    )
+
+    if quiz_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quiz session not found.",
+        )
+
+    # 2. A session can only be submitted once.
+    if quiz_session.status != "in_progress":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Quiz session has already been submitted or is not active.",
+        )
+
+    # 3. Check that every quiz item has exactly one answer.
+    session_items = sorted(
+        quiz_session.items,
+        key=lambda item: item.position,
+    )
+
+    submitted_ids = [
+        answer.quiz_item_id
+        for answer in payload.answers
+    ]
+
+    if len(submitted_ids) != len(set(submitted_ids)):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Each quiz item must have exactly one answer.",
+        )
+
+    expected_ids = {item.id for item in session_items}
+
+    if set(submitted_ids) != expected_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Submit exactly one answer for every quiz item in this session.",
+        )
+
+    answers_by_item_id = {
+        answer.quiz_item_id: answer
+        for answer in payload.answers
+    }
+
+    # 4. Validate options and grade using the frozen answer-key snapshot.
+    now = datetime.now(timezone.utc)
+    attempts: list[Attempt] = []
+    result_items: list[QuizSessionSubmitItemPublic] = []
+    correct_count = 0
+
+    for item in session_items:
+        answer = answers_by_item_id[item.id]
+        snapshot = item.question_snapshot
+
+        snapshot_options = snapshot.get("options", [])
+        available_option_keys = {
+            option.get("option_key")
+            for option in snapshot_options
+            if isinstance(option, dict)
+        }
+
+        if answer.selected_option_key not in available_option_keys:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Option {answer.selected_option_key} is not available "
+                    f"for quiz item {item.id}."
+                ),
+            )
+
+        # The answer key comes from the server-side snapshot,
+        # never from the submitted request or current question record.
+        correct_option_key = item.answer_key_snapshot
+        is_correct = (
+            answer.selected_option_key == correct_option_key
+        )
+
+        if is_correct:
+            correct_count += 1
+
+        attempts.append(
+            Attempt(
+                user_id=current_user.id,
+                quiz_item_id=item.id,
+                attempt_number=1,
+                selected_option_key=answer.selected_option_key,
+                is_correct=is_correct,
+                is_retry=False,
+                time_spent_seconds=answer.time_spent_seconds,
+                submitted_at=now,
+            )
+        )
+
+        result_items.append(
+            QuizSessionSubmitItemPublic(
+                quiz_item_id=item.id,
+                question_id=item.question_id,
+                position=item.position,
+                content=snapshot["content"],
+                difficulty=snapshot.get("difficulty"),
+                options=snapshot_options,
+                skill_codes=snapshot.get("skill_codes", []),
+                selected_option_key=answer.selected_option_key,
+                correct_option_key=correct_option_key,
+                is_correct=is_correct,
+                explanation=snapshot.get("explanation"),
+            )
+        )
+
+    # 5. Calculate the score and prepare the response.
+    total_questions = len(session_items)
+
+    response_data = QuizSessionSubmitResponse(
+        session_id=quiz_session.id,
+        status="submitted",
+        finished_at=now,
+        total_questions=total_questions,
+        answered_count=len(payload.answers),
+        correct_count=correct_count,
+        accuracy_percent=round(
+            correct_count / total_questions * 100,
+            2,
+        ),
+        items=result_items,
+    )
+
+    # 6. Save all attempts and update the session in one transaction.
+    quiz_session.status = "submitted"
+    quiz_session.finished_at = now
+    db.add_all(attempts)
+
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Quiz session could not be submitted again.",
+        ) from exc
+
+    return response_data
