@@ -1,15 +1,18 @@
 
-"""API for creating TOEIC Part 5 practice sessions."""
+"""API for creating and reviewing TOEIC Part 5 practice sessions."""
 
+from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from backend.app.api.auth_deps import get_current_user
 from backend.app.api.deps import get_db
 from backend.app.db.models import (
+    Attempt,
     Question,
     QuestionOption,
     QuestionSkill,
@@ -22,17 +25,14 @@ from backend.app.schemas.questions import Part5OptionPublic
 from backend.app.schemas.quiz_sessions import (
     QuizSessionCreateRequest,
     QuizSessionCreateResponse,
+    QuizSessionDetailItemPublic,
+    QuizSessionDetailResponse,
+    QuizSessionHistoryItemPublic,
+    QuizSessionHistoryListResponse,
     QuizSessionItemPublic,
-)
-from datetime import datetime, timezone
-
-from sqlalchemy.exc import IntegrityError
-
-from backend.app.db.models import Attempt
-from backend.app.schemas.quiz_sessions import (
+    QuizSessionSubmitItemPublic,
     QuizSessionSubmitRequest,
     QuizSessionSubmitResponse,
-    QuizSessionSubmitItemPublic,
 )
 
 router = APIRouter(tags=["Quiz Sessions"])
@@ -420,3 +420,199 @@ def submit_quiz_session(
         ) from exc
 
     return response_data
+
+
+def _build_quiz_session_history_item(
+    quiz_session: QuizSession,
+) -> QuizSessionHistoryItemPublic:
+    """Build a summary without exposing answers before submission."""
+
+    question_count = len(quiz_session.items)
+
+    # The first attempt represents the original submitted answer.
+    first_attempts = []
+    for item in quiz_session.items:
+        attempt = next(
+            (
+                candidate
+                for candidate in item.attempts
+                if candidate.attempt_number == 1
+            ),
+            None,
+        )
+        if attempt is not None:
+            first_attempts.append(attempt)
+
+    answered_count = len(first_attempts)
+
+    if quiz_session.status == "submitted":
+        correct_count = sum(
+            1 for attempt in first_attempts if attempt.is_correct
+        )
+        accuracy_percent = (
+            round(correct_count / question_count * 100, 2)
+            if question_count > 0
+            else 0.0
+        )
+    else:
+        # Do not reveal scores for unfinished or abandoned sessions.
+        correct_count = None
+        accuracy_percent = None
+
+    return QuizSessionHistoryItemPublic(
+        id=quiz_session.id,
+        status=quiz_session.status,
+        started_at=quiz_session.started_at,
+        finished_at=quiz_session.finished_at,
+        question_count=question_count,
+        answered_count=answered_count,
+        correct_count=correct_count,
+        accuracy_percent=accuracy_percent,
+    )
+
+
+@router.get(
+    "/quiz-sessions",
+    response_model=QuizSessionHistoryListResponse,
+    summary="List the authenticated user's quiz history",
+)
+def list_quiz_sessions(
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> QuizSessionHistoryListResponse:
+    """Return a paginated list of the current user's sessions."""
+
+    owner_filter = QuizSession.user_id == current_user.id
+
+    total = db.scalar(
+        select(func.count(QuizSession.id)).where(owner_filter)
+    ) or 0
+
+    sessions = db.scalars(
+        select(QuizSession)
+        .where(owner_filter)
+        .options(
+            selectinload(QuizSession.items).selectinload(
+                QuizItem.attempts
+            )
+        )
+        .order_by(
+            QuizSession.started_at.desc(),
+            QuizSession.id.desc(),
+        )
+        .offset(offset)
+        .limit(limit)
+    ).all()
+
+    history_items = [
+        _build_quiz_session_history_item(quiz_session)
+        for quiz_session in sessions
+    ]
+
+    return QuizSessionHistoryListResponse(
+        items=history_items,
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/quiz-sessions/{session_id}",
+    response_model=QuizSessionDetailResponse,
+    summary="Review one quiz session",
+)
+def get_quiz_session_detail(
+    session_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> QuizSessionDetailResponse:
+    """Return session details while protecting unfinished answers."""
+
+    quiz_session = db.scalar(
+        select(QuizSession)
+        .where(
+            QuizSession.id == session_id,
+            QuizSession.user_id == current_user.id,
+        )
+        .options(
+            selectinload(QuizSession.items).selectinload(
+                QuizItem.attempts
+            )
+        )
+    )
+
+    # Use the same response for a nonexistent session and another
+    # user's session, so the endpoint does not disclose ownership.
+    if quiz_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Quiz session not found.",
+        )
+
+    is_submitted = quiz_session.status == "submitted"
+    detail_items = []
+
+    for item in sorted(
+        quiz_session.items,
+        key=lambda quiz_item: quiz_item.position,
+    ):
+        snapshot = item.question_snapshot
+        options = [
+            Part5OptionPublic(**option)
+            for option in snapshot.get("options", [])
+        ]
+
+        first_attempt = next(
+            (
+                attempt
+                for attempt in item.attempts
+                if attempt.attempt_number == 1
+            ),
+            None,
+        )
+
+        if is_submitted:
+            selected_option_key = (
+                first_attempt.selected_option_key
+                if first_attempt is not None
+                else None
+            )
+            correct_option_key = item.answer_key_snapshot
+            is_correct = (
+                first_attempt.is_correct
+                if first_attempt is not None
+                else None
+            )
+            explanation = snapshot.get("explanation")
+        else:
+            # Never expose the answer key or explanation mid-quiz.
+            selected_option_key = None
+            correct_option_key = None
+            is_correct = None
+            explanation = None
+
+        detail_items.append(
+            QuizSessionDetailItemPublic(
+                quiz_item_id=item.id,
+                question_id=item.question_id,
+                position=item.position,
+                content=snapshot["content"],
+                difficulty=snapshot.get("difficulty"),
+                options=options,
+                skill_codes=snapshot.get("skill_codes", []),
+                selected_option_key=selected_option_key,
+                correct_option_key=correct_option_key,
+                is_correct=is_correct,
+                explanation=explanation,
+            )
+        )
+
+    summary = _build_quiz_session_history_item(quiz_session)
+
+    return QuizSessionDetailResponse(
+        **summary.model_dump(),
+        items=detail_items,
+    )

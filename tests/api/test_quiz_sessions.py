@@ -634,3 +634,237 @@ def test_submit_quiz_session_cannot_be_submitted_twice(
             select(func.count()).select_from(Attempt)
         )
         assert attempt_count == 1
+
+
+def test_list_quiz_sessions_paginates_and_shows_submitted_score(
+    quiz_client: tuple[TestClient, Engine, dict[str, str]],
+) -> None:
+    """History is paginated and only submitted sessions have scores."""
+
+    client, _, headers = quiz_client
+
+    first_response = client.post(
+        "/quiz-sessions",
+        json={"question_count": 1},
+        headers=headers,
+    )
+    second_response = client.post(
+        "/quiz-sessions",
+        json={"question_count": 2},
+        headers=headers,
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+
+    first_session = first_response.json()
+    second_session = second_response.json()
+
+    submit_response = client.post(
+        f"/quiz-sessions/{second_session['id']}/submit",
+        json={
+            "answers": [
+                {
+                    "quiz_item_id": item["id"],
+                    "selected_option_key": "B",
+                }
+                for item in second_session["items"]
+            ]
+        },
+        headers=headers,
+    )
+    assert submit_response.status_code == 200
+
+    page_one = client.get(
+        "/quiz-sessions?limit=1&offset=0",
+        headers=headers,
+    )
+    assert page_one.status_code == 200
+
+    data_one = page_one.json()
+    assert data_one["total"] == 2
+    assert data_one["limit"] == 1
+    assert data_one["offset"] == 0
+    assert len(data_one["items"]) == 1
+    assert data_one["items"][0]["id"] == second_session["id"]
+    assert data_one["items"][0]["status"] == "submitted"
+    assert data_one["items"][0]["question_count"] == 2
+    assert data_one["items"][0]["answered_count"] == 2
+    assert data_one["items"][0]["correct_count"] == 2
+    assert data_one["items"][0]["accuracy_percent"] == 100.0
+
+    # A history summary must not include answer details.
+    assert "correct_option_key" not in page_one.text
+    assert "explanation" not in page_one.text
+
+    page_two = client.get(
+        "/quiz-sessions?limit=1&offset=1",
+        headers=headers,
+    )
+    assert page_two.status_code == 200
+
+    data_two = page_two.json()
+    assert data_two["items"][0]["id"] == first_session["id"]
+    assert data_two["items"][0]["status"] == "in_progress"
+    assert data_two["items"][0]["correct_count"] is None
+    assert data_two["items"][0]["accuracy_percent"] is None
+
+
+def test_quiz_session_detail_hides_answers_before_submission(
+    quiz_client: tuple[TestClient, Engine, dict[str, str]],
+) -> None:
+    """An unfinished session must not reveal correct answers."""
+
+    client, _, headers = quiz_client
+
+    create_response = client.post(
+        "/quiz-sessions",
+        json={"question_count": 2},
+        headers=headers,
+    )
+    assert create_response.status_code == 201
+
+    session_data = create_response.json()
+    response = client.get(
+        f"/quiz-sessions/{session_data['id']}",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["status"] == "in_progress"
+    assert data["question_count"] == 2
+    assert data["correct_count"] is None
+    assert data["accuracy_percent"] is None
+    assert len(data["items"]) == 2
+
+    for item in data["items"]:
+        assert item["selected_option_key"] is None
+        assert item["correct_option_key"] is None
+        assert item["is_correct"] is None
+        assert item["explanation"] is None
+
+    assert "Private explanation" not in response.text
+    assert "answer_key_snapshot" not in response.text
+
+
+def test_quiz_session_detail_shows_results_after_submission(
+    quiz_client: tuple[TestClient, Engine, dict[str, str]],
+) -> None:
+    """A submitted session can be reviewed with its saved results."""
+
+    client, _, headers = quiz_client
+
+    create_response = client.post(
+        "/quiz-sessions",
+        json={"question_count": 2},
+        headers=headers,
+    )
+    assert create_response.status_code == 201
+
+    session_data = create_response.json()
+    session_id = session_data["id"]
+    items = session_data["items"]
+
+    submit_response = client.post(
+        f"/quiz-sessions/{session_id}/submit",
+        json={
+            "answers": [
+                {
+                    "quiz_item_id": items[0]["id"],
+                    "selected_option_key": "B",
+                },
+                {
+                    "quiz_item_id": items[1]["id"],
+                    "selected_option_key": "A",
+                },
+            ]
+        },
+        headers=headers,
+    )
+    assert submit_response.status_code == 200
+
+    response = client.get(
+        f"/quiz-sessions/{session_id}",
+        headers=headers,
+    )
+    assert response.status_code == 200
+
+    data = response.json()
+    assert data["status"] == "submitted"
+    assert data["question_count"] == 2
+    assert data["answered_count"] == 2
+    assert data["correct_count"] == 1
+    assert data["accuracy_percent"] == 50.0
+    assert len(data["items"]) == 2
+
+    first_item = data["items"][0]
+    assert first_item["selected_option_key"] == "B"
+    assert first_item["correct_option_key"] == "B"
+    assert first_item["is_correct"] is True
+    assert first_item["explanation"].startswith("Private explanation")
+
+    second_item = data["items"][1]
+    assert second_item["selected_option_key"] == "A"
+    assert second_item["correct_option_key"] == "B"
+    assert second_item["is_correct"] is False
+    assert second_item["explanation"].startswith("Private explanation")
+
+
+def test_user_cannot_view_another_users_quiz_session(
+    quiz_client: tuple[TestClient, Engine, dict[str, str]],
+) -> None:
+    """A user cannot retrieve another user's session or history."""
+
+    client, engine, headers = quiz_client
+
+    with Session(engine) as db:
+        other_user = User(
+            email="another-student@example.com",
+            password_hash="test-only-hash",
+            role="student",
+            is_active=True,
+        )
+        db.add(other_user)
+        db.commit()
+        db.refresh(other_user)
+        other_user_id = other_user.id
+
+    other_token = create_access_token(
+        other_user_id,
+        settings=JWTSettings(secret_key=TEST_SECRET),
+    )
+    other_headers = {
+        "Authorization": f"Bearer {other_token}",
+    }
+
+    create_response = client.post(
+        "/quiz-sessions",
+        json={"question_count": 1},
+        headers=other_headers,
+    )
+    assert create_response.status_code == 201
+    other_session_id = create_response.json()["id"]
+
+    # The original user must not be able to view that session.
+    response = client.get(
+        f"/quiz-sessions/{other_session_id}",
+        headers=headers,
+    )
+    assert response.status_code == 404
+
+    # The other user's session must not appear in the original user's list.
+    history_response = client.get(
+        "/quiz-sessions",
+        headers=headers,
+    )
+    assert history_response.status_code == 200
+    assert history_response.json()["total"] == 0
+
+    # The owner can still view their own session.
+    owner_response = client.get(
+        f"/quiz-sessions/{other_session_id}",
+        headers=other_headers,
+    )
+    assert owner_response.status_code == 200
