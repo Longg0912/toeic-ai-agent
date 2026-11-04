@@ -14,6 +14,12 @@ from backend.app.api.routes.questions import (
 from backend.app.api.routes.quiz_sessions import (
     router as quiz_sessions_router,
 )
+from backend.app.api.routes.tutor import (
+    router as tutor_router,
+)
+from backend.app.api.routes.tutor_chat import (
+    router as tutor_chat_router,
+)
 # 1. Khởi tạo ứng dụng FastAPI
 app = FastAPI(
     title="TOEIC Tutor Agent API",
@@ -29,6 +35,8 @@ app = FastAPI(
 app.include_router(auth_router)
 app.include_router(questions_router)
 app.include_router(quiz_sessions_router)
+app.include_router(tutor_router)
+app.include_router(tutor_chat_router)
 
 # 3. Xử lý lỗi HTTP 422 an toàn
 @app.exception_handler(RequestValidationError)

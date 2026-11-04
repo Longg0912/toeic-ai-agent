@@ -32,7 +32,7 @@ from backend.app.db.models import (
 from backend.app.db.session import engine as application_engine
 
 
-EXPECTED_REVISION = "c4d8e2a91f70"
+EXPECTED_REVISION = "e2f7a6c91d34"
 
 SEED_SOURCE_NAME = "TOEIC Tutor Agent synthetic Part 5 seed"
 

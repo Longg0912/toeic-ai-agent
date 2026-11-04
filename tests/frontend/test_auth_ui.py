@@ -35,6 +35,14 @@ PASSWORD = "ExamplePassword@2026"
 TEST_TOKEN = "test.jwt.access-token"
 
 
+class FakeCookieManager(dict):
+    """Fake encrypted cookie manager for Streamlit AppTest."""
+
+    def save(self) -> None:
+        """Simulate saving cookies without using a browser."""
+        pass
+
+
 class FakeAuthAPIClient:
     """In-memory substitute for AuthAPIClient."""
 
@@ -107,6 +115,12 @@ def start_test_app(
         auth_ui,
         "AuthAPIClient",
         lambda: fake_client,
+    )
+
+    monkeypatch.setattr(
+        auth_ui,
+        "_create_cookie_manager",
+        lambda: FakeCookieManager(),
     )
 
     return AppTest.from_string(

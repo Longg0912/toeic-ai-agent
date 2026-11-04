@@ -75,10 +75,21 @@ def test_migration_creates_core_tables(
 
         # Alembic version table
         "alembic_version",
+        # AI Tutor Chat tables
+        "chat_sessions",
+        "chat_messages",
+        # Global RAG document tables
+        "documents",
+        "document_chunks",
+    }
+    
+    actual_tables = set(inspector.get_table_names())
+    chunk_columns = {
+        column["name"]
+        for column in inspector.get_columns("document_chunks")
     }
 
-    actual_tables = set(inspector.get_table_names())
-
+    assert "page_number" in chunk_columns
     assert actual_tables == expected_tables
 
 

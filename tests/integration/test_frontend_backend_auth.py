@@ -234,7 +234,12 @@ def disable_db_user(
 
         user.is_active = False
         session.commit()
+class FakeCookieManager(dict):
+    """Fake encrypted cookie manager for Streamlit AppTest."""
 
+    def save(self) -> None:
+        """Simulate saving cookies without using a browser."""
+        pass
 
 def start_streamlit_ui(
     monkeypatch: pytest.MonkeyPatch,
@@ -247,7 +252,11 @@ def start_streamlit_ui(
         "AuthAPIClient",
         lambda: api_client,
     )
-
+    monkeypatch.setattr(
+        auth_ui,
+        "_create_cookie_manager",
+        lambda: FakeCookieManager(),
+    )
     script = (
         "from frontend.auth_ui "
         "import render_authentication\n"

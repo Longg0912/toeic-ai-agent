@@ -15,6 +15,16 @@ from backend.app.db.models.quiz import (
     QuizSession,
 )
 
+from backend.app.db.models.chat import (
+    ChatMessage,
+    ChatSession,
+)
+
+from backend.app.db.models.documents import (
+    Document,
+    DocumentChunk,
+)
+
 __all__ = [
     "User",
     "StudentProfile",
@@ -25,4 +35,8 @@ __all__ = [
     "QuizSession",
     "QuizItem",
     "Attempt",
+    "ChatSession",
+    "ChatMessage",
+    "Document",
+    "DocumentChunk",
 ]
