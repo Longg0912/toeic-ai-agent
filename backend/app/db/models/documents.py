@@ -46,7 +46,7 @@ class Document(Base):
         ),
         CheckConstraint(
             "processing_status IN "
-            "('pending', 'processing', 'processed', 'indexed', "
+            "('pending', 'processing', 'indexed', "
             "'failed', 'archived')",
             name="ck_documents_processing_status",
         ),
