@@ -12,6 +12,7 @@ from backend.app.db.base import Base
 from backend.app.db.models import (
     Attempt,
     Question,
+    QuestionOption,
     QuestionSkill,
     QuizItem,
     QuizSession,
@@ -23,10 +24,16 @@ from backend.app.services.tutor_tools import (
     ToolDefinition,
     ToolInputError,
     ToolRegistry,
+    ToolExecutionError,
     TUTOR_TOOL_REGISTRY,
     UnknownToolError,
 )
+from types import SimpleNamespace
 
+from backend.app.services.retrieval_service import (
+    RetrievalServiceError,
+)
+from backend.app.services import tutor_tools
 
 @pytest.fixture
 def db() -> Iterator[Session]:
@@ -113,6 +120,38 @@ def create_question(
 
     db.flush()
 
+def create_recommendation_candidate(
+    db: Session,
+    skill: Skill,
+    question_number: int,
+    part: int = 5,
+) -> Question:
+    """Create an approved question eligible for recommendation."""
+
+    question = Question(
+        part=part,
+        content=f"Recommendation candidate {question_number}",
+        correct_option_key="A",
+        explanation="Test explanation.",
+        review_status="approved",
+        usage_permission_status="granted",
+        visibility="public",
+        content_hash=f"{question_number:064d}",
+    )
+
+    db.add(question)
+    db.flush()
+
+    db.add(
+        QuestionSkill(
+            question_id=question.id,
+            skill_id=skill.id,
+        )
+    )
+
+    db.flush()
+
+    return question
 
 def test_registry_contains_initial_tools() -> None:
     names = {
@@ -123,6 +162,10 @@ def test_registry_contains_initial_tools() -> None:
     assert names == {
         "get_student_profile",
         "get_weak_skills",
+        "get_learning_progress",
+        "search_question",
+        "recommend_questions",
+        "retrieve_global_knowledge",
     }
 
 
@@ -422,3 +465,523 @@ def test_registry_rejects_duplicate_tool_names() -> None:
 
     with pytest.raises(ValueError):
         registry.register(definition)
+
+
+def test_get_learning_progress_returns_first_attempt_statistics(
+    db: Session,
+) -> None:
+    user = create_user(db, "progress@example.test")
+
+    skill = Skill(
+        code="PROGRESS_TEST",
+        name="Progress test",
+        category="grammar",
+    )
+    db.add(skill)
+    db.flush()
+
+    create_question(db, user.id, skill, 101, True)
+    create_question(db, user.id, skill, 102, False)
+
+    # Add a correct retry. It must not change first-attempt accuracy.
+    first_item = (
+        db.query(QuizItem)
+        .join(Question)
+        .filter(Question.content == "Test question 102")
+        .one()
+    )
+
+    db.add(
+        Attempt(
+            user_id=user.id,
+            quiz_item_id=first_item.id,
+            attempt_number=2,
+            selected_option_key="A",
+            is_correct=True,
+            is_retry=True,
+        )
+    )
+
+    db.commit()
+
+    result = TUTOR_TOOL_REGISTRY.execute(
+        name="get_learning_progress",
+        arguments={},
+        db=db,
+        student_id=user.id,
+    )
+
+    assert result["has_data"] is True
+    assert result["quiz_session_count"] == 2
+    assert result["first_attempt_count"] == 2
+    assert result["correct_count"] == 1
+    assert result["incorrect_count"] == 1
+    assert result["accuracy_percent"] == 50.0
+    assert result["analysis_basis"] == "first_attempt_only"
+
+
+def test_get_learning_progress_handles_no_data(
+    db: Session,
+) -> None:
+    user = create_user(db, "empty-progress@example.test")
+    db.commit()
+
+    result = TUTOR_TOOL_REGISTRY.execute(
+        name="get_learning_progress",
+        arguments={},
+        db=db,
+        student_id=user.id,
+    )
+
+    assert result["has_data"] is False
+    assert result["first_attempt_count"] == 0
+    assert result["accuracy_percent"] == 0.0
+
+
+def test_search_question_by_id(
+    db: Session,
+) -> None:
+    user = create_user(db, "search@example.test")
+
+    question = Question(
+        part=5,
+        content="The manager _____ the report.",
+        correct_option_key="A",
+        explanation="Use the present simple form.",
+        review_status="approved",
+        usage_permission_status="granted",
+        visibility="public",
+        content_hash="a" * 64,
+    )
+    db.add(question)
+    db.flush()
+
+    db.add_all(
+        [
+            QuestionOption(
+                question_id=question.id,
+                option_key="A",
+                content="reviews",
+            ),
+            QuestionOption(
+                question_id=question.id,
+                option_key="B",
+                content="review",
+            ),
+        ]
+    )
+    db.commit()
+
+    result = TUTOR_TOOL_REGISTRY.execute(
+        name="search_question",
+        arguments={"question_id": question.id},
+        db=db,
+        student_id=user.id,
+    )
+
+    assert result["has_results"] is True
+    assert result["result_count"] == 1
+
+    found = result["results"][0]
+
+    assert found["question_id"] == question.id
+    assert found["correct_option_key"] == "A"
+    assert len(found["options"]) == 2
+
+
+def test_search_question_by_text(
+    db: Session,
+) -> None:
+    user = create_user(db, "text-search@example.test")
+
+    question = Question(
+        part=5,
+        content="The employees _____ hard every day.",
+        correct_option_key="B",
+        review_status="approved",
+        usage_permission_status="granted",
+        visibility="public",
+        content_hash="b" * 64,
+    )
+    db.add(question)
+    db.commit()
+
+    result = TUTOR_TOOL_REGISTRY.execute(
+        name="search_question",
+        arguments={"query": "employees"},
+        db=db,
+        student_id=user.id,
+    )
+
+    assert result["has_results"] is True
+    assert result["result_count"] == 1
+
+
+def test_search_question_excludes_unapproved_questions(
+    db: Session,
+) -> None:
+    user = create_user(db, "approval@example.test")
+
+    question = Question(
+        part=5,
+        content="Unapproved test question.",
+        correct_option_key="A",
+        review_status="draft",
+        usage_permission_status="granted",
+        visibility="public",
+        content_hash="c" * 64,
+    )
+    db.add(question)
+    db.commit()
+
+    result = TUTOR_TOOL_REGISTRY.execute(
+        name="search_question",
+        arguments={"query": "Unapproved"},
+        db=db,
+        student_id=user.id,
+    )
+
+    assert result["has_results"] is False
+    assert result["results"] == []
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {},
+        {"question_id": 1, "query": "test"},
+        {"question_id": 0},
+        {"query": "   "},
+        {"unexpected": "value"},
+    ],
+)
+def test_search_question_rejects_invalid_arguments(
+    db: Session,
+    arguments: dict,
+) -> None:
+    user = create_user(db, "invalid-search@example.test")
+
+    with pytest.raises(ToolInputError):
+        TUTOR_TOOL_REGISTRY.execute(
+            name="search_question",
+            arguments=arguments,
+            db=db,
+            student_id=user.id,
+        )
+
+def test_recommend_questions_prioritizes_weak_skills(
+    db: Session,
+) -> None:
+    user = create_user(db, "recommend@example.test")
+
+    grammar = Skill(
+        code="RECOMMEND_GRAMMAR",
+        name="Grammar",
+        category="grammar",
+    )
+
+    vocabulary = Skill(
+        code="RECOMMEND_VOCAB",
+        name="Vocabulary",
+        category="vocabulary",
+    )
+
+    db.add_all([grammar, vocabulary])
+    db.flush()
+
+    # Two incorrect first attempts make Grammar a weak skill.
+    create_question(db, user.id, grammar, 201, False)
+    create_question(db, user.id, grammar, 202, False)
+
+    grammar_candidate = create_recommendation_candidate(
+        db,
+        grammar,
+        203,
+    )
+
+    vocabulary_candidate = create_recommendation_candidate(
+        db,
+        vocabulary,
+        204,
+    )
+
+    db.commit()
+
+    result = TUTOR_TOOL_REGISTRY.execute(
+        name="recommend_questions",
+        arguments={},
+        db=db,
+        student_id=user.id,
+    )
+
+    assert result["has_recommendations"] is True
+    assert result["recommendation_basis"] == "weak_skills"
+    assert "RECOMMEND_GRAMMAR" in result["target_weak_skills"]
+
+    recommended_ids = {
+        item["question_id"]
+        for item in result["recommendations"]
+    }
+
+    assert grammar_candidate.id in recommended_ids
+    assert vocabulary_candidate.id not in recommended_ids
+
+    # The tool must not reveal answers or explanations.
+    for item in result["recommendations"]:
+        assert "correct_option_key" not in item
+        assert "explanation" not in item
+
+
+def test_recommend_questions_uses_general_practice_without_weak_skills(
+    db: Session,
+) -> None:
+    user = create_user(db, "general-recommend@example.test")
+
+    skill = Skill(
+        code="GENERAL_RECOMMEND",
+        name="General practice",
+        category="grammar",
+    )
+
+    db.add(skill)
+    db.flush()
+
+    candidate = create_recommendation_candidate(
+        db,
+        skill,
+        205,
+    )
+
+    db.commit()
+
+    result = TUTOR_TOOL_REGISTRY.execute(
+        name="recommend_questions",
+        arguments={},
+        db=db,
+        student_id=user.id,
+    )
+
+    assert result["has_recommendations"] is True
+
+    assert (
+        result["recommendation_basis"]
+        == "general_practice_no_identified_weak_skills"
+    )
+
+    assert result["target_weak_skills"] == []
+
+    assert (
+        result["recommendations"][0]["question_id"]
+        == candidate.id
+    )
+
+
+def test_recommend_questions_filters_by_part(
+    db: Session,
+) -> None:
+    user = create_user(db, "part-recommend@example.test")
+
+    skill = Skill(
+        code="PART_FILTER",
+        name="Part filter",
+        category="grammar",
+    )
+
+    db.add(skill)
+    db.flush()
+
+    create_recommendation_candidate(
+        db,
+        skill,
+        206,
+        part=5,
+    )
+
+    part_six_candidate = create_recommendation_candidate(
+        db,
+        skill,
+        207,
+        part=6,
+    )
+
+    db.commit()
+
+    result = TUTOR_TOOL_REGISTRY.execute(
+        name="recommend_questions",
+        arguments={"part": 6},
+        db=db,
+        student_id=user.id,
+    )
+
+    assert result["has_recommendations"] is True
+
+    assert all(
+        item["part"] == 6
+        for item in result["recommendations"]
+    )
+
+    assert (
+        result["recommendations"][0]["question_id"]
+        == part_six_candidate.id
+    )
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"part": 4},
+        {"part": 8},
+        {"limit": 0},
+        {"limit": 11},
+        {"unexpected": "value"},
+    ],
+)
+def test_recommend_questions_rejects_invalid_arguments(
+    db: Session,
+    arguments: dict,
+) -> None:
+    user = create_user(db, "invalid-recommend@example.test")
+
+    with pytest.raises(ToolInputError):
+        TUTOR_TOOL_REGISTRY.execute(
+            name="recommend_questions",
+            arguments=arguments,
+            db=db,
+            student_id=user.id,
+        )
+
+def create_fake_retrieved_chunk():
+    return SimpleNamespace(
+        document_id=10,
+        document_title="TOEIC Grammar Guide",
+        original_filename="toeic_grammar.pdf",
+        chunk_index=2,
+        content="The present simple is used for habits and facts.",
+        page_number=5,
+        source_name="TOEIC Study Materials",
+        source_reference="https://example.test/toeic-grammar",
+        source_license="CC BY 4.0",
+        distance=0.15,
+    )
+
+def test_retrieve_global_knowledge_returns_sources(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = create_user(db, "rag-tool@example.test")
+
+    fake_chunk = create_fake_retrieved_chunk()
+
+    class FakeRetrievalService:
+        def retrieve(self, db, query, top_k):
+            assert query == "Present simple tense"
+            assert top_k == 3
+            return [fake_chunk]
+
+    monkeypatch.setattr(
+        tutor_tools,
+        "_get_retrieval_service",
+        lambda: FakeRetrievalService(),
+    )
+
+    result = TUTOR_TOOL_REGISTRY.execute(
+        name="retrieve_global_knowledge",
+        arguments={
+            "query": "Present simple tense",
+            "top_k": 3,
+        },
+        db=db,
+        student_id=user.id,
+    )
+
+    assert result["has_results"] is True
+    assert result["result_count"] == 1
+
+    source = result["sources"][0]
+
+    assert source["document_id"] == 10
+    assert source["document_title"] == "TOEIC Grammar Guide"
+    assert source["page_number"] == 5
+    assert source["source_reference"] == (
+        "https://example.test/toeic-grammar"
+    )
+
+    assert "content_trust_notice" in result
+
+def test_retrieve_global_knowledge_handles_empty_results(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = create_user(db, "empty-rag@example.test")
+
+    class FakeRetrievalService:
+        def retrieve(self, db, query, top_k):
+            return []
+
+    monkeypatch.setattr(
+        tutor_tools,
+        "_get_retrieval_service",
+        lambda: FakeRetrievalService(),
+    )
+
+    result = TUTOR_TOOL_REGISTRY.execute(
+        name="retrieve_global_knowledge",
+        arguments={"query": "Unknown TOEIC topic"},
+        db=db,
+        student_id=user.id,
+    )
+
+    assert result["has_results"] is False
+    assert result["result_count"] == 0
+    assert result["sources"] == []
+
+def test_retrieve_global_knowledge_handles_service_error(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user = create_user(db, "error-rag@example.test")
+
+    class FakeRetrievalService:
+        def retrieve(self, db, query, top_k):
+            raise RetrievalServiceError("Simulated retrieval failure")
+
+    monkeypatch.setattr(
+        tutor_tools,
+        "_get_retrieval_service",
+        lambda: FakeRetrievalService(),
+    )
+
+    with pytest.raises(ToolExecutionError):
+        TUTOR_TOOL_REGISTRY.execute(
+            name="retrieve_global_knowledge",
+            arguments={"query": "TOEIC grammar"},
+            db=db,
+            student_id=user.id,
+        )
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {},
+        {"query": ""},
+        {"query": "   "},
+        {"query": "x" * 1001},
+        {"query": "TOEIC", "top_k": 0},
+        {"query": "TOEIC", "top_k": 6},
+        {"query": "TOEIC", "top_k": True},
+        {"query": "TOEIC", "student_id": 123},
+    ],
+)
+def test_retrieve_global_knowledge_rejects_invalid_arguments(
+    db: Session,
+    arguments: dict,
+) -> None:
+    user = create_user(db, "invalid-rag@example.test")
+
+    with pytest.raises(ToolInputError):
+        TUTOR_TOOL_REGISTRY.execute(
+            name="retrieve_global_knowledge",
+            arguments=arguments,
+            db=db,
+            student_id=user.id,
+        )
