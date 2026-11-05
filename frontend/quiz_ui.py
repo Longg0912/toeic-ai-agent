@@ -6,13 +6,14 @@ import streamlit as st
 
 from frontend.auth_ui import get_active_token
 from frontend.quiz_api_client import QuizAPIClient, QuizAPIError
+from frontend.tutor_api_client import TutorAPIClient, TutorAPIError
 
 
 ACTIVE_QUIZ_KEY = "toeic_active_quiz"
 RESULT_KEY = "toeic_quiz_result"
 HISTORY_KEY = "toeic_quiz_history"
 DETAIL_KEY = "toeic_quiz_history_detail"
-
+TUTOR_EXPLANATIONS_KEY = "toeic_tutor_explanations"
 
 SKILL_OPTIONS = [
     ("Tất cả kỹ năng", None),
@@ -237,8 +238,21 @@ def _render_review_items(
     items: list[dict[str, Any]],
     *,
     submitted: bool,
+    api_base_url: str | None = None,
+    token: str | None = None,
+    session_id: int | None = None,
+    view_context: str = "review",
 ) -> None:
-    """Display questions, options and review information."""
+    """Display questions, review information and Gemini explanations."""
+
+    tutor_cache = st.session_state.get(
+        TUTOR_EXPLANATIONS_KEY,
+        {},
+    )
+
+    if not isinstance(tutor_cache, dict):
+        tutor_cache = {}
+
     for item in sorted(
         items,
         key=lambda value: value["position"],
@@ -284,8 +298,95 @@ def _render_review_items(
                     "Kỹ năng: " + ", ".join(skill_codes)
                 )
 
+            # Gemini Tutor is available only after submission.
+            if not submitted:
+                continue
 
-def _render_result(result: dict[str, Any]) -> None:
+            question_id = item.get("question_id")
+
+            # Never substitute quiz_item_id for question_id.
+            if (
+                isinstance(question_id, bool)
+                or not isinstance(question_id, int)
+                or question_id <= 0
+            ):
+                st.warning(
+                    "Không tìm thấy question_id hợp lệ "
+                    "cho câu hỏi này."
+                )
+                continue
+
+            if not api_base_url or not token or session_id is None:
+                continue
+
+            cache_key = f"{session_id}:{question_id}"
+
+            tutor_result = tutor_cache.get(cache_key)
+
+            if tutor_result is None:
+                if st.button(
+                    "🤖 Giải thích bằng Gemini",
+                    key=(
+                        f"toeic_tutor_{view_context}_"
+                        f"{session_id}_{question_id}"
+                    ),
+                    use_container_width=True,
+                ):
+                    try:
+                        with st.spinner(
+                            "Gemini đang phân tích câu hỏi..."
+                        ):
+                            with TutorAPIClient(
+                                base_url=api_base_url,
+                                access_token=token,
+                            ) as client:
+                                tutor_result = client.explain_question(
+                                    question_id
+                                )
+
+                    except (TutorAPIError, ValueError) as exc:
+                        st.error(str(exc))
+
+                    else:
+                        tutor_cache[cache_key] = tutor_result
+                        st.session_state[
+                            TUTOR_EXPLANATIONS_KEY
+                        ] = tutor_cache
+
+                        st.rerun()
+
+            else:
+                with st.expander(
+                    "🤖 Gia sư Gemini giải thích",
+                    expanded=True,
+                ):
+                    tutor_correct_key = tutor_result[
+                        "correct_option_key"
+                    ]
+
+                    if (
+                        correct_key is not None
+                        and tutor_correct_key != correct_key
+                    ):
+                        st.warning(
+                            "Đáp án từ Tutor API khác đáp án "
+                            "được lưu trong kết quả bài làm. "
+                            "Hãy kiểm tra lại dữ liệu câu hỏi."
+                        )
+
+                    st.markdown(
+                        "**Lời giải từ Gemini:**"
+                    )
+                    st.markdown(
+                        tutor_result["explanation"]
+                    )
+
+
+def _render_result(
+    result: dict[str, Any],
+    api_base_url: str,
+    token: str,
+) -> None:
     """Display the score and review after submission."""
     st.divider()
     st.subheader("Kết quả bài luyện")
@@ -306,6 +407,10 @@ def _render_result(result: dict[str, Any]) -> None:
     _render_review_items(
         result.get("items", []),
         submitted=True,
+        api_base_url=api_base_url,
+        token=token,
+        session_id=result["session_id"],
+            view_context="result",
     )
 
     if st.button(
@@ -332,6 +437,8 @@ def _history_label(item: dict[str, Any]) -> str:
 
 def _render_history_detail(
     detail: dict[str, Any],
+    api_base_url: str,
+    token: str,
 ) -> None:
     """Display a saved session without revealing unfinished answers."""
     st.divider()
@@ -361,6 +468,10 @@ def _render_history_detail(
         _render_review_items(
             detail.get("items", []),
             submitted=True,
+            api_base_url=api_base_url,
+            token=token,
+            session_id=detail["id"],
+            view_context="history",
         )
     else:
         st.info(
@@ -472,7 +583,11 @@ def _render_history(
         detail
         and detail.get("id") == selected_session_id
     ):
-        _render_history_detail(detail)
+        _render_history_detail(
+            detail,
+            api_base_url,
+            token,
+        )
 
 
 def render_quiz_interface(api_base_url: str) -> None:
@@ -512,7 +627,7 @@ def render_quiz_interface(api_base_url: str) -> None:
         result = st.session_state.get(RESULT_KEY)
 
         if result:
-            _render_result(result)
+            _render_result(result, api_base_url, token)
 
     with history_tab:
         _render_history(

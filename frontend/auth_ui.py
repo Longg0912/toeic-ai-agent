@@ -1,10 +1,11 @@
-
 """Streamlit authentication UI for the TOEIC Tutor Agent.
 
 Features:
 - Student registration form.
 - Student login form.
 - JWT access-token session management.
+- Encrypted cookie persistence.
+- Restore login after browser refresh.
 - Current-user profile.
 - Logout.
 
@@ -14,12 +15,17 @@ The JWT signing secret is never used by the frontend.
 
 from __future__ import annotations
 
+import math
+import os
 import time
 
 from collections.abc import MutableMapping
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
+from dotenv import load_dotenv
+from streamlit_cookies_manager import EncryptedCookieManager
 
 from frontend.auth_api_client import (
     AuthAPIClient,
@@ -29,31 +35,92 @@ from frontend.auth_api_client import (
 )
 
 
+# =====================================================
+# 1. Constants and configuration
+# =====================================================
+
 TOKEN_KEY = "toeic_auth_access_token"
 EXPIRES_AT_KEY = "toeic_auth_expires_at"
 
+COOKIE_TOKEN_KEY = "access_token"
+COOKIE_EXPIRES_AT_KEY = "expires_at"
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+COOKIE_PREFIX = "toeic-ai-tutor/"
+
 
 # =====================================================
-# 1. Session management
+# 2. Cookie manager
+# =====================================================
+
+
+def _create_cookie_manager() -> EncryptedCookieManager | None:
+    """Create and initialize the encrypted cookie manager."""
+
+    load_dotenv(PROJECT_ROOT / ".env")
+
+    cookie_password = os.getenv("TOEIC_COOKIE_PASSWORD")
+
+    if not cookie_password:
+        st.error(
+            "Chưa cấu hình TOEIC_COOKIE_PASSWORD trong file .env. "
+            "Vui lòng bổ sung mật khẩu mã hóa cookie."
+        )
+        return None
+
+    cookies = EncryptedCookieManager(
+        prefix=COOKIE_PREFIX,
+        password=cookie_password,
+    )
+
+    if not cookies.ready():
+        with st.spinner("Đang khởi tạo phiên đăng nhập..."):
+            st.stop()
+
+    return cookies
+
+
+def _clear_auth_cookies(
+    cookies: EncryptedCookieManager,
+) -> None:
+    """Invalidate authentication cookies instead of deleting them."""
+
+    cookies[COOKIE_TOKEN_KEY] = "logged_out"
+    cookies[COOKIE_EXPIRES_AT_KEY] = "0"
+
+    cookies.save()
+
+    # Allow the browser time to process the cookie update.
+    time.sleep(0.5)
+
+
+# =====================================================
+# 3. Session management
 # =====================================================
 
 
 def clear_auth_session(
     state: MutableMapping[str, Any],
+    cookies: EncryptedCookieManager | None = None,
 ) -> None:
-    """Remove only authentication data from the session."""
+    """Remove authentication data from session state and cookies."""
 
     state.pop(TOKEN_KEY, None)
     state.pop(EXPIRES_AT_KEY, None)
+
+    if cookies is not None:
+        _clear_auth_cookies(cookies)
 
 
 def save_auth_session(
     state: MutableMapping[str, Any],
     login_result: LoginResult,
     *,
+    cookies: EncryptedCookieManager | None = None,
     now: float | None = None,
 ) -> None:
-    """Store a JWT and its estimated expiration timestamp."""
+    """Save JWT and expiration timestamp to session state and cookies."""
 
     token = login_result.access_token
     lifetime = login_result.expires_in
@@ -64,20 +131,18 @@ def save_auth_session(
         or type(lifetime) is not int
         or lifetime <= 0
     ):
-        raise ValueError(
-            "Invalid login session data."
-        )
+        raise ValueError("Invalid login session data.")
 
-    issued_at = (
-        time.time()
-        if now is None
-        else now
-    )
+    issued_at = time.time() if now is None else now
+    expires_at = issued_at + lifetime
 
     state[TOKEN_KEY] = token
-    state[EXPIRES_AT_KEY] = (
-        issued_at + lifetime
-    )
+    state[EXPIRES_AT_KEY] = expires_at
+
+    if cookies is not None:
+        cookies[COOKIE_TOKEN_KEY] = token
+        cookies[COOKIE_EXPIRES_AT_KEY] = str(expires_at)
+        cookies.save()
 
 
 def get_active_token(
@@ -87,29 +152,25 @@ def get_active_token(
 ) -> str | None:
     """Return the JWT if the local session has not expired.
 
-    This is a convenience check for the UI.
-    FastAPI remains responsible for JWT verification.
+    FastAPI remains responsible for verifying the JWT.
     """
 
     token = state.get(TOKEN_KEY)
     expires_at = state.get(EXPIRES_AT_KEY)
 
-    if not isinstance(token, str) or not token:
+    if not isinstance(token, str) or not token.strip():
         clear_auth_session(state)
         return None
 
     if (
         isinstance(expires_at, bool)
         or not isinstance(expires_at, (int, float))
+        or not math.isfinite(expires_at)
     ):
         clear_auth_session(state)
         return None
 
-    current_time = (
-        time.time()
-        if now is None
-        else now
-    )
+    current_time = time.time() if now is None else now
 
     if current_time >= expires_at:
         clear_auth_session(state)
@@ -118,13 +179,59 @@ def get_active_token(
     return token
 
 
+def restore_auth_session(
+    state: MutableMapping[str, Any],
+    cookies: EncryptedCookieManager,
+    *,
+    now: float | None = None,
+) -> str | None:
+    """Restore a valid authentication session from browser cookies."""
+
+    token = cookies.get(COOKIE_TOKEN_KEY)
+    raw_expires_at = cookies.get(COOKIE_EXPIRES_AT_KEY)
+
+    # No authentication cookie exists.
+    if token is None and raw_expires_at is None:
+        return None
+
+    # Explicitly logged-out sessions must never be restored.
+    if token == "logged_out":
+        return None
+
+    if (
+        not isinstance(token, str)
+        or not token.strip()
+        or raw_expires_at is None
+    ):
+        return None
+
+    try:
+        expires_at = float(raw_expires_at)
+    except (TypeError, ValueError):
+        return None
+
+    if not math.isfinite(expires_at):
+        return None
+
+    current_time = time.time() if now is None else now
+
+    if current_time >= expires_at:
+        return None
+
+    state[TOKEN_KEY] = token
+    state[EXPIRES_AT_KEY] = expires_at
+
+    return token
+
+
 # =====================================================
-# 2. Login form
+# 4. Login form
 # =====================================================
 
 
 def _render_login_form(
     client: AuthAPIClient,
+    cookies: EncryptedCookieManager,
 ) -> None:
     """Display and handle the student login form."""
 
@@ -158,45 +265,39 @@ def _render_login_form(
     email = email.strip()
 
     if not email or not password:
-        st.error(
-            "Vui lòng nhập đầy đủ email và mật khẩu."
-        )
+        st.error("Vui lòng nhập đầy đủ email và mật khẩu.")
         return
 
     try:
-        # First authenticate and obtain an access token.
+        # Authenticate and obtain an access token.
         result = client.login(
             email=email,
             password=password,
         )
 
-        # Confirm that the token represents
-        # an existing, active account.
-        user = client.get_me(
-            result.access_token
-        )
+        # Verify that the token belongs to an active account.
+        user = client.get_me(result.access_token)
 
         if not user.is_active:
-            st.error(
-                "Không thể xác thực tài khoản."
-            )
+            st.error("Không thể xác thực tài khoản.")
             return
 
     except AuthAPIError as error:
         st.error(str(error))
         return
 
-    # Only save a token after successful verification.
+    # Save the session only after successful verification.
     save_auth_session(
         st.session_state,
         result,
+        cookies=cookies,
     )
 
     st.rerun()
 
 
 # =====================================================
-# 3. Registration form
+# 5. Registration form
 # =====================================================
 
 
@@ -242,21 +343,15 @@ def _render_registration_form(
     email = email.strip()
 
     if not email or not password or not confirmation:
-        st.error(
-            "Vui lòng nhập đầy đủ các trường."
-        )
+        st.error("Vui lòng nhập đầy đủ các trường.")
         return
 
     if password != confirmation:
-        st.error(
-            "Mật khẩu xác nhận không khớp."
-        )
+        st.error("Mật khẩu xác nhận không khớp.")
         return
 
     if not 12 <= len(password) <= 128:
-        st.error(
-            "Mật khẩu phải có từ 12 đến 128 ký tự."
-        )
+        st.error("Mật khẩu phải có từ 12 đến 128 ký tự.")
         return
 
     try:
@@ -276,12 +371,13 @@ def _render_registration_form(
 
 
 # =====================================================
-# 4. Current user profile
+# 6. Current user profile
 # =====================================================
 
 
 def _render_profile(
     user: PublicUser,
+    cookies: EncryptedCookieManager,
 ) -> None:
     """Display only public account information."""
 
@@ -292,6 +388,7 @@ def _render_profile(
     st.write(f"**User ID:** {user.id}")
     st.write(f"**Email:** {user.email}")
     st.write(f"**Vai trò:** {user.role}")
+
     st.write(
         "**Trạng thái:** "
         + (
@@ -307,13 +404,14 @@ def _render_profile(
         use_container_width=True,
     ):
         clear_auth_session(
-            st.session_state
+            st.session_state,
+            cookies,
         )
         st.rerun()
 
 
 # =====================================================
-# 5. Main authentication UI
+# 7. Main authentication UI
 # =====================================================
 
 
@@ -323,6 +421,12 @@ def render_authentication(
     """Render login, registration, or the current profile."""
 
     st.subheader("Tài khoản TOEIC")
+
+    # Initialize encrypted cookies.
+    cookies = _create_cookie_manager()
+
+    if cookies is None:
+        return
 
     try:
         client = (
@@ -339,9 +443,15 @@ def render_authentication(
 
     had_token = TOKEN_KEY in st.session_state
 
-    token = get_active_token(
-        st.session_state
-    )
+    # First check the current Streamlit session.
+    token = get_active_token(st.session_state)
+
+    # If the session is empty, try restoring from cookies.
+    if token is None:
+        token = restore_auth_session(
+            st.session_state,
+            cookies,
+        )
 
     if had_token and token is None:
         st.warning(
@@ -349,35 +459,45 @@ def render_authentication(
             "Vui lòng đăng nhập lại."
         )
 
+    # -------------------------------------------------
+    # Authenticated user
+    # -------------------------------------------------
+
     if token is not None:
         try:
             user = client.get_me(token)
 
             if not user.is_active:
                 clear_auth_session(
-                    st.session_state
+                    st.session_state,
+                    cookies,
                 )
+
                 st.warning(
                     "Phiên đăng nhập không còn hợp lệ."
                 )
 
             else:
-                _render_profile(user)
+                _render_profile(
+                    user,
+                    cookies,
+                )
                 return
 
         except AuthAPIError as error:
             if error.status_code in (401, 403):
                 clear_auth_session(
-                    st.session_state
+                    st.session_state,
+                    cookies,
                 )
+
                 st.warning(
                     "Phiên đăng nhập không còn hợp lệ. "
                     "Vui lòng đăng nhập lại."
                 )
 
             else:
-                # Do not discard a potentially valid
-                # session on transient network errors.
+                # Keep the session if the error is temporary.
                 st.error(str(error))
 
                 if st.button(
@@ -385,19 +505,26 @@ def render_authentication(
                     key="toeic_logout_on_error",
                 ):
                     clear_auth_session(
-                        st.session_state
+                        st.session_state,
+                        cookies,
                     )
                     st.rerun()
 
                 return
 
-    # Anonymous users see the login/register forms.
+    # -------------------------------------------------
+    # Anonymous user
+    # -------------------------------------------------
+
     login_tab, register_tab = st.tabs(
         ["Đăng nhập", "Đăng ký"]
     )
 
     with login_tab:
-        _render_login_form(client)
+        _render_login_form(
+            client,
+            cookies,
+        )
 
     with register_tab:
         _render_registration_form(client)

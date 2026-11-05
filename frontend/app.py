@@ -7,6 +7,7 @@ import streamlit as st
 from frontend.api_client import check_backend_health
 from frontend.auth_ui import render_authentication
 from frontend.quiz_ui import render_quiz_interface
+from frontend.tutor_ui import render_tutor_interface
 
 
 DEFAULT_API_URL = "http://127.0.0.1:8765"
@@ -51,10 +52,17 @@ def main() -> None:
 
     st.divider()
 
+    # Authentication
     render_authentication()
 
     st.divider()
 
+    # Multi-turn AI Tutor chat
+    render_tutor_interface(API_BASE_URL)
+
+    st.divider()
+
+    # TOEIC Part 5 practice and history
     render_quiz_interface(API_BASE_URL)
 
 
