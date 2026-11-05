@@ -4,7 +4,9 @@
 from types import SimpleNamespace
 
 import pytest
+from google.genai import types
 
+from backend.app.services.tutor_tools import ToolInputError
 from backend.app.services.gemini_tutor import (
     CHAT_SYSTEM_INSTRUCTION,
     GeminiConfigurationError,
@@ -301,3 +303,296 @@ def test_gemini_tool_declarations_preserve_parameter_types() -> None:
                 "array",
                 "object",
             }
+
+def test_chat_executes_gemini_function_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Backend executes Gemini function calls with authenticated ID."""
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-api-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-test-model")
+
+    captured_calls = []
+    captured_requests = []
+
+    function_call = types.FunctionCall(
+        name="get_student_profile",
+        args={},
+        id="call-001",
+    )
+
+    first_response = SimpleNamespace(
+        text=None,
+        candidates=[
+            SimpleNamespace(
+                content=types.Content(
+                    role="model",
+                    parts=[
+                        types.Part(
+                            function_call=function_call,
+                        )
+                    ],
+                )
+            )
+        ],
+    )
+
+    second_response = SimpleNamespace(
+        text="Bạn chưa thiết lập hồ sơ học tập.",
+        candidates=[],
+    )
+
+    class FakeModels:
+        def __init__(self):
+            self.responses = [
+                first_response,
+                second_response,
+            ]
+
+        def generate_content(self, **kwargs):
+            captured_requests.append(kwargs)
+            return self.responses.pop(0)
+
+    class FakeClient:
+        def __init__(self, api_key):
+            self.models = FakeModels()
+
+    def fake_execute(
+        name,
+        arguments,
+        db,
+        student_id,
+    ):
+        captured_calls.append(
+            {
+                "name": name,
+                "arguments": arguments,
+                "db": db,
+                "student_id": student_id,
+            }
+        )
+
+        return {
+            "profile_found": False,
+            "target_score": None,
+        }
+
+    monkeypatch.setattr(
+        "backend.app.services.gemini_tutor.genai.Client",
+        FakeClient,
+    )
+
+    monkeypatch.setattr(
+        "backend.app.services.gemini_tutor."
+        "TUTOR_TOOL_REGISTRY.execute",
+        fake_execute,
+    )
+
+    fake_db = object()
+
+    result = chat_with_tutor(
+        [
+            {
+                "role": "user",
+                "content": "Hãy kiểm tra hồ sơ học tập của tôi.",
+            }
+        ],
+        db=fake_db,
+        student_id=123,
+    )
+
+    assert result == "Bạn chưa thiết lập hồ sơ học tập."
+
+    assert len(captured_calls) == 1
+
+    assert captured_calls[0]["name"] == "get_student_profile"
+
+    assert captured_calls[0]["student_id"] == 123
+
+    assert captured_calls[0]["db"] is fake_db
+
+    assert len(captured_requests) == 2
+
+    function_response_content = (
+        captured_requests[1]["contents"][-1]
+    )
+
+    function_response = (
+        function_response_content.parts[0].function_response
+    )
+
+    assert function_response.name == "get_student_profile"
+
+    assert function_response.response == {
+        "result": {
+            "profile_found": False,
+            "target_score": None,
+        }
+    }
+
+
+def test_chat_executes_multiple_function_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multiple tool calls in one Gemini response are executed."""
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-api-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-test-model")
+
+    executed_names = []
+
+    first_response = SimpleNamespace(
+        text=None,
+        candidates=[
+            SimpleNamespace(
+                content=types.Content(
+                    role="model",
+                    parts=[
+                        types.Part(
+                            function_call=types.FunctionCall(
+                                name="get_student_profile",
+                                args={},
+                                id="call-001",
+                            )
+                        ),
+                        types.Part(
+                            function_call=types.FunctionCall(
+                                name="get_weak_skills",
+                                args={"limit": 3},
+                                id="call-002",
+                            )
+                        ),
+                    ],
+                )
+            )
+        ],
+    )
+
+    final_response = SimpleNamespace(
+        text="Đây là kết quả phân tích của bạn.",
+        candidates=[],
+    )
+
+    class FakeModels:
+        def __init__(self):
+            self.responses = [
+                first_response,
+                final_response,
+            ]
+
+        def generate_content(self, **kwargs):
+            return self.responses.pop(0)
+
+    class FakeClient:
+        def __init__(self, api_key):
+            self.models = FakeModels()
+
+    def fake_execute(name, arguments, db, student_id):
+        executed_names.append(name)
+        return {"success": True}
+
+    monkeypatch.setattr(
+        "backend.app.services.gemini_tutor.genai.Client",
+        FakeClient,
+    )
+
+    monkeypatch.setattr(
+        "backend.app.services.gemini_tutor."
+        "TUTOR_TOOL_REGISTRY.execute",
+        fake_execute,
+    )
+
+    result = chat_with_tutor(
+        [
+            {
+                "role": "user",
+                "content": "Phân tích tình hình học tập của tôi.",
+            }
+        ],
+        db=object(),
+        student_id=123,
+    )
+
+    assert result == "Đây là kết quả phân tích của bạn."
+
+    assert executed_names == [
+        "get_student_profile",
+        "get_weak_skills",
+    ]
+
+
+def test_chat_returns_tool_validation_error_to_gemini(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid tool arguments are returned safely to Gemini."""
+
+    monkeypatch.setenv("GEMINI_API_KEY", "test-api-key")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-test-model")
+
+    first_response = SimpleNamespace(
+        text=None,
+        candidates=[
+            SimpleNamespace(
+                content=types.Content(
+                    role="model",
+                    parts=[
+                        types.Part(
+                            function_call=types.FunctionCall(
+                                name="get_weak_skills",
+                                args={"limit": "invalid"},
+                                id="call-001",
+                            )
+                        )
+                    ],
+                )
+            )
+        ],
+    )
+
+    final_response = SimpleNamespace(
+        text="Tôi chưa thể lấy dữ liệu kỹ năng.",
+        candidates=[],
+    )
+
+    class FakeModels:
+        def __init__(self):
+            self.responses = [
+                first_response,
+                final_response,
+            ]
+
+        def generate_content(self, **kwargs):
+            return self.responses.pop(0)
+
+    class FakeClient:
+        def __init__(self, api_key):
+            self.models = FakeModels()
+
+    def fake_execute(name, arguments, db, student_id):
+        raise ToolInputError(
+            "Argument 'limit' must be an integer."
+        )
+
+    monkeypatch.setattr(
+        "backend.app.services.gemini_tutor.genai.Client",
+        FakeClient,
+    )
+
+    monkeypatch.setattr(
+        "backend.app.services.gemini_tutor."
+        "TUTOR_TOOL_REGISTRY.execute",
+        fake_execute,
+    )
+
+    result = chat_with_tutor(
+        [
+            {
+                "role": "user",
+                "content": "Kiểm tra kỹ năng yếu của tôi.",
+            }
+        ],
+        db=object(),
+        student_id=123,
+    )
+
+    assert result == "Tôi chưa thể lấy dữ liệu kỹ năng."
