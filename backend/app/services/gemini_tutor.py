@@ -9,9 +9,40 @@ from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from backend.app.services.tutor_tools import (
+    TUTOR_TOOL_REGISTRY,
+)
 
 logger = logging.getLogger(__name__)
+def build_gemini_tool() -> types.Tool:
+    """
+    Convert provider-independent Tutor Tool definitions
+    into a Gemini Function Calling Tool.
 
+    The authenticated student_id is deliberately excluded
+    from Gemini function parameters. It is supplied only
+    by the backend when executing a tool.
+    """
+
+    declarations = []
+
+    for definition in TUTOR_TOOL_REGISTRY.get_all():
+        declarations.append(
+            types.FunctionDeclaration(
+                name=definition.name,
+                description=definition.description,
+                parameters_json_schema=definition.parameters,
+            )
+        )
+
+    if not declarations:
+        raise GeminiServiceError(
+            "No Tutor tools are registered."
+        )
+
+    return types.Tool(
+        function_declarations=declarations,
+    )
 # Find the project root and load its .env file.
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 load_dotenv(PROJECT_ROOT / ".env")

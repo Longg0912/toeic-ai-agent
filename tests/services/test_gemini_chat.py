@@ -11,7 +11,9 @@ from backend.app.services.gemini_tutor import (
     GeminiServiceError,
     chat_with_tutor,
 )
-
+from backend.app.services.gemini_tutor import (
+    build_gemini_tool,
+)
 
 def test_chat_requires_api_key(
     monkeypatch: pytest.MonkeyPatch,
@@ -217,3 +219,85 @@ def test_chat_handles_gemini_failure(
                 "content": "Explain present perfect.",
             }
         ])
+def test_build_gemini_tool_contains_all_registered_tools() -> None:
+    """Gemini declarations contain all six registered tools."""
+
+    from backend.app.services.tutor_tools import (
+        TUTOR_TOOL_REGISTRY,
+    )
+
+    gemini_tool = build_gemini_tool()
+
+    declared_names = {
+        declaration.name
+        for declaration in gemini_tool.function_declarations
+    }
+
+    registered_names = {
+        definition.name
+        for definition in TUTOR_TOOL_REGISTRY.get_all()
+    }
+
+    assert declared_names == registered_names
+
+    assert len(declared_names) == 6
+
+
+def test_gemini_tool_declarations_exclude_student_id() -> None:
+    """Gemini must not receive student_id as a tool argument."""
+
+    gemini_tool = build_gemini_tool()
+
+    for declaration in gemini_tool.function_declarations:
+        schema = declaration.parameters_json_schema
+
+        properties = schema.get("properties", {})
+
+        assert "student_id" not in properties
+
+        assert "user_id" not in properties
+
+
+def test_gemini_tool_declarations_preserve_required_arguments() -> None:
+    """Required arguments are preserved from Tool Registry."""
+
+    from backend.app.services.tutor_tools import (
+        TUTOR_TOOL_REGISTRY,
+    )
+
+    gemini_tool = build_gemini_tool()
+
+    declarations = {
+        declaration.name: declaration
+        for declaration in gemini_tool.function_declarations
+    }
+
+    for definition in TUTOR_TOOL_REGISTRY.get_all():
+        declaration = declarations[definition.name]
+
+        assert (
+            declaration.parameters_json_schema["required"]
+            == definition.parameters.get("required", [])
+        )
+
+
+def test_gemini_tool_declarations_preserve_parameter_types() -> None:
+    """Parameter types remain consistent with the registry."""
+
+    gemini_tool = build_gemini_tool()
+
+    for declaration in gemini_tool.function_declarations:
+        schema = declaration.parameters_json_schema
+
+        for name, property_schema in schema.get(
+            "properties",
+            {},
+        ).items():
+            assert property_schema["type"] in {
+                "string",
+                "integer",
+                "boolean",
+                "number",
+                "array",
+                "object",
+            }
