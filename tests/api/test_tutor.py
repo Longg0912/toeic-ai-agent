@@ -349,7 +349,7 @@ def test_tutor_question_not_found(
 ) -> None:
     """A nonexistent question returns HTTP 404."""
 
-    client, _, owner_headers, _ = tutor_client
+    client, question_ids, owner_headers, _ = tutor_client
 
     response = client.post(
         "/tutor/explain",
@@ -558,12 +558,19 @@ def test_tutor_chat_creates_session_and_saves_messages(
 ) -> None:
     """A new conversation saves both user and assistant messages."""
 
-    client, _, owner_headers, _ = tutor_client
+    client, question_ids, owner_headers, _ = tutor_client
 
     captured: dict[str, object] = {}
 
-    def fake_chat(messages: list[dict[str, str]]) -> str:
+    def fake_chat(
+        messages: list[dict[str, str]],
+        *,
+        db: Session,
+        student_id: int,
+    ) -> str:
         captured["messages"] = messages
+        captured["db"] = db
+        captured["student_id"] = student_id
         return "Chào bạn! Tôi có thể giúp bạn học TOEIC."
 
     monkeypatch.setattr(
@@ -580,6 +587,10 @@ def test_tutor_chat_creates_session_and_saves_messages(
     )
 
     assert response.status_code == 200
+
+    # Verify that the API passes the authenticated user's identity and DB session.
+    assert isinstance(captured["db"], Session)
+    assert captured["student_id"] == question_ids["owner"]
 
     data = response.json()
 
@@ -625,7 +636,7 @@ def test_tutor_chat_preserves_multi_turn_history(
 
     monkeypatch.setattr(
         "backend.app.api.routes.tutor_chat.chat_with_tutor",
-        lambda messages: "Phản hồi đầu tiên.",
+        lambda messages, **kwargs: "Phản hồi đầu tiên.",
     )
 
     first_response = client.post(
@@ -644,6 +655,7 @@ def test_tutor_chat_preserves_multi_turn_history(
 
     def fake_second_chat(
         messages: list[dict[str, str]],
+        **kwargs: object,
     ) -> str:
         captured["messages"] = messages
         return "Since thường đi với một mốc thời gian bắt đầu."
@@ -738,7 +750,7 @@ def test_tutor_chat_enforces_session_owner(
 
     monkeypatch.setattr(
         "backend.app.api.routes.tutor_chat.chat_with_tutor",
-        lambda messages: "Phản hồi kiểm thử.",
+        lambda messages, **kwargs: "Phản hồi kiểm thử.",
     )
 
     create_response = client.post(
@@ -781,7 +793,7 @@ def test_tutor_chat_lists_only_current_user_sessions(
 
     monkeypatch.setattr(
         "backend.app.api.routes.tutor_chat.chat_with_tutor",
-        lambda messages: "Phản hồi kiểm thử.",
+        lambda messages, **kwargs: "Phản hồi kiểm thử.",
     )
 
     for message in [
@@ -824,6 +836,7 @@ def test_tutor_chat_handles_gemini_configuration_error(
 
     def raise_configuration_error(
         messages: list[dict[str, str]],
+        **kwargs: object,
     ) -> str:
         raise GeminiConfigurationError(
             "Test configuration error."
@@ -861,6 +874,7 @@ def test_tutor_chat_handles_gemini_service_error(
 
     def raise_service_error(
         messages: list[dict[str, str]],
+        **kwargs: object,
     ) -> str:
         raise GeminiServiceError(
             "Test Gemini service error."
@@ -890,7 +904,7 @@ def test_tutor_chat_rejects_unknown_session(
 
     monkeypatch.setattr(
         "backend.app.api.routes.tutor_chat.chat_with_tutor",
-        lambda messages: "Không nên được gọi.",
+        lambda messages, **kwargs: "Không nên được gọi.",
     )
 
     response = client.post(

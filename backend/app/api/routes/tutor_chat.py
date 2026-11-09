@@ -129,7 +129,11 @@ def send_chat_message(
     # 4. Call Gemini before writing messages to the database.
     # If Gemini fails, no incomplete message pair is saved.
     try:
-        assistant_content = chat_with_tutor(conversation)
+        assistant_content = chat_with_tutor(
+            conversation,
+            db=db,
+            student_id=current_user.id,
+        )
 
     except GeminiConfigurationError:
         raise HTTPException(
