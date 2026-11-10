@@ -1,3 +1,4 @@
+
 """Import ORM models into the shared SQLAlchemy metadata."""
 
 from backend.app.db.models.core import (
@@ -25,6 +26,11 @@ from backend.app.db.models.documents import (
     DocumentChunk,
 )
 
+from backend.app.db.models.study_plan import (
+    StudyPlan,
+    StudyPlanTask,
+)
+
 __all__ = [
     "User",
     "StudentProfile",
@@ -39,4 +45,6 @@ __all__ = [
     "ChatMessage",
     "Document",
     "DocumentChunk",
+    "StudyPlan",
+    "StudyPlanTask",
 ]

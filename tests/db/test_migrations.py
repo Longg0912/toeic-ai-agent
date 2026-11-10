@@ -81,6 +81,9 @@ def test_migration_creates_core_tables(
         # Global RAG document tables
         "documents",
         "document_chunks",
+        # Study Planner tables
+        "study_plans",
+        "study_plan_tasks",
     }
     
     actual_tables = set(inspector.get_table_names())
@@ -478,3 +481,232 @@ def test_document_ownership_migration_preserves_existing_data(
 
     finally:
         test_engine.dispose()
+
+def test_study_plan_migration_creates_expected_schema(
+    migrated_db: Connection,
+) -> None:
+    """Verify Study Plan tables, columns, indexes, and foreign keys."""
+
+    inspector = inspect(migrated_db)
+
+    plan_columns = {
+        column["name"]
+        for column in inspector.get_columns("study_plans")
+    }
+
+    assert {
+        "id",
+        "user_id",
+        "title",
+        "target_score",
+        "start_date",
+        "end_date",
+        "daily_minutes",
+        "status",
+        "created_at",
+        "updated_at",
+    }.issubset(plan_columns)
+
+    task_columns = {
+        column["name"]
+        for column in inspector.get_columns("study_plan_tasks")
+    }
+
+    assert {
+        "id",
+        "study_plan_id",
+        "skill_id",
+        "task_type",
+        "scheduled_date",
+        "estimated_minutes",
+        "target_question_count",
+        "status",
+        "completed_at",
+    }.issubset(task_columns)
+
+    plan_indexes = {
+        index["name"]: index
+        for index in inspector.get_indexes("study_plans")
+    }
+
+    assert "ix_study_plans_user_status" in plan_indexes
+    assert "uq_study_plans_one_active_per_user" in plan_indexes
+
+    active_index = plan_indexes[
+    "uq_study_plans_one_active_per_user"
+    ]
+
+    assert bool(active_index["unique"]) is True
+    assert active_index["column_names"] == ["user_id"]
+
+    task_indexes = {
+        index["name"]
+        for index in inspector.get_indexes("study_plan_tasks")
+    }
+
+    assert "ix_study_plan_tasks_plan_date_status" in task_indexes
+    assert "ix_study_plan_tasks_skill_id" in task_indexes
+
+    plan_foreign_keys = inspector.get_foreign_keys(
+        "study_plans"
+    )
+
+    assert any(
+        fk["referred_table"] == "users"
+        and fk["constrained_columns"] == ["user_id"]
+        for fk in plan_foreign_keys
+    )
+
+    task_foreign_keys = inspector.get_foreign_keys(
+        "study_plan_tasks"
+    )
+
+    assert any(
+        fk["referred_table"] == "study_plans"
+        and fk["constrained_columns"] == ["study_plan_id"]
+        for fk in task_foreign_keys
+    )
+
+    assert any(
+        fk["referred_table"] == "skills"
+        and fk["constrained_columns"] == ["skill_id"]
+        for fk in task_foreign_keys
+    )
+
+def test_study_plan_allows_only_one_active_plan_per_user(
+    migrated_db: Connection,
+) -> None:
+    """A user cannot have two active study plans."""
+
+    migrated_db.execute(
+        text(
+            """
+            INSERT INTO users (
+                id,
+                email,
+                password_hash
+            )
+            VALUES (
+                9001,
+                'study-plan-test@example.com',
+                'test-password-hash'
+            )
+            """
+        )
+    )
+
+    migrated_db.execute(
+        text(
+            """
+            INSERT INTO study_plans (
+                user_id,
+                title,
+                target_score,
+                start_date,
+                end_date,
+                daily_minutes,
+                status
+            )
+            VALUES (
+                9001,
+                'First plan',
+                750,
+                '2026-11-10',
+                '2026-12-10',
+                60,
+                'active'
+            )
+            """
+        )
+    )
+
+    # A second active plan for the same user must fail.
+    with pytest.raises(IntegrityError):
+        with migrated_db.begin_nested():
+            migrated_db.execute(
+                text(
+                    """
+                    INSERT INTO study_plans (
+                        user_id,
+                        title,
+                        target_score,
+                        start_date,
+                        end_date,
+                        daily_minutes,
+                        status
+                    )
+                    VALUES (
+                        9001,
+                        'Second active plan',
+                        850,
+                        '2026-11-10',
+                        '2026-12-20',
+                        90,
+                        'active'
+                    )
+                    """
+                )
+            )
+
+    # A historical completed plan must still be allowed.
+    migrated_db.execute(
+        text(
+            """
+            INSERT INTO study_plans (
+                user_id,
+                title,
+                target_score,
+                start_date,
+                end_date,
+                daily_minutes,
+                status
+            )
+            VALUES (
+                9001,
+                'Completed plan',
+                650,
+                '2026-10-01',
+                '2026-11-01',
+                45,
+                'completed'
+            )
+            """
+        )
+    )
+
+    # Changing the first plan to paused allows a new active plan.
+    migrated_db.execute(
+        text(
+            """
+            UPDATE study_plans
+            SET status = 'paused'
+            WHERE user_id = 9001
+              AND title = 'First plan'
+            """
+        )
+    )
+
+    migrated_db.execute(
+        text(
+            """
+            INSERT INTO study_plans (
+                user_id,
+                title,
+                target_score,
+                start_date,
+                end_date,
+                daily_minutes,
+                status
+            )
+            VALUES (
+                9001,
+                'Replacement active plan',
+                800,
+                '2026-11-10',
+                '2026-12-20',
+                60,
+                'active'
+            )
+            """
+        )
+    )
