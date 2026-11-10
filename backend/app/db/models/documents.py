@@ -1,4 +1,5 @@
-"""ORM models for global TOEIC RAG documents and chunks."""
+
+"""ORM models for global and personal TOEIC RAG documents."""
 
 from __future__ import annotations
 
@@ -12,7 +13,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    UniqueConstraint,
     func,
     text,
 )
@@ -22,7 +22,7 @@ from backend.app.db.base import Base
 
 
 class Document(Base):
-    """A source document available to the global TOEIC RAG system."""
+    """A global or user-owned source document for TOEIC RAG."""
 
     __tablename__ = "documents"
 
@@ -58,14 +58,33 @@ class Document(Base):
             "length(trim(storage_path)) > 0",
             name="ck_documents_storage_path_not_empty",
         ),
-        UniqueConstraint(
+
+        # Global documents: content_hash must be unique.
+        Index(
+            "uq_documents_global_content_hash",
             "content_hash",
-            name="uq_documents_content_hash",
+            unique=True,
+            sqlite_where=text("owner_user_id IS NULL"),
         ),
+
+        # Personal documents: uniqueness is scoped to one owner.
+        Index(
+            "uq_documents_personal_owner_hash",
+            "owner_user_id",
+            "content_hash",
+            unique=True,
+            sqlite_where=text("owner_user_id IS NOT NULL"),
+        ),
+
         Index(
             "ix_documents_status_permission",
             "processing_status",
             "usage_permission_status",
+        ),
+        Index(
+            "ix_documents_owner_status",
+            "owner_user_id",
+            "processing_status",
         ),
     )
 
@@ -73,6 +92,16 @@ class Document(Base):
         Integer,
         primary_key=True,
         autoincrement=True,
+    )
+
+    # NULL means Global RAG.
+    # A user ID means Personal RAG.
+    owner_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+        ),
+        nullable=True,
     )
 
     title: Mapped[str] = mapped_column(

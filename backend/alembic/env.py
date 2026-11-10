@@ -1,7 +1,9 @@
+
 """Alembic migration environment for TOEIC Tutor Agent."""
 
 from __future__ import annotations
 
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -12,23 +14,18 @@ from backend.app.db.session import DATABASE_URL, make_engine
 
 # Import ORM models so they register with Base.metadata.
 import backend.app.db.models  # noqa: F401
-import os
 
-# Alembic configuration object
+
 config = context.config
 
-
-# Configure logging from alembic.ini
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-
-# Metadata containing all registered ORM tables
 target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    """Generate SQL migration commands without DB connection."""
+    """Generate SQL migration commands without a DB connection."""
 
     context.configure(
         url=DATABASE_URL,
@@ -45,7 +42,7 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    """Run migrations with optional SQLite FK protection."""
+    """Run migrations with optional SQLite foreign-key protection."""
 
     sqlite_fk_disabled = False
     dbapi_connection = None
@@ -81,10 +78,11 @@ def do_run_migrations(connection: Connection) -> None:
             render_as_batch=True,
         )
 
+        # Run the migration chain exactly once.
         with context.begin_transaction():
             context.run_migrations()
 
-        # Verify every foreign key before finishing.
+        # Verify every foreign key before re-enabling enforcement.
         if sqlite_fk_disabled:
             violations = dbapi_connection.execute(
                 "PRAGMA foreign_key_check"
@@ -109,12 +107,9 @@ def do_run_migrations(connection: Connection) -> None:
                     "SQLite foreign keys could not be re-enabled."
                 )
 
-    with context.begin_transaction():
-        context.run_migrations()
-
 
 def run_migrations_online() -> None:
-    """Execute migrations using the configured SQLite database."""
+    """Execute migrations using the configured database."""
 
     # Allow tests to inject their own database connection.
     existing_connection = config.attributes.get("connection")
@@ -123,7 +118,6 @@ def run_migrations_online() -> None:
         do_run_migrations(existing_connection)
         return
 
-    # Use the same database configuration as SQLAlchemy.
     migration_engine = make_engine(DATABASE_URL)
 
     try:
