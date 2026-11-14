@@ -40,6 +40,14 @@ class StudyPlanUserNotEligibleError(StudyPlanError):
 class ActiveStudyPlanExistsError(StudyPlanError):
     """Raised when the student already has an active study plan."""
 
+class StudyPlanNotFoundError(StudyPlanError):
+    """Raised when the plan does not exist or is not owned by the student."""
+
+class StudyPlanNotActiveError(StudyPlanError):
+    """Raised when an operation requires an active study plan."""
+
+class StudyPlanNotPausedError(StudyPlanError):
+    """Raised when an operation requires a paused study plan."""
 
 def validate_plan_input(
     *,
@@ -420,6 +428,178 @@ def create_study_plan(
                 "The student already has an active study plan."
             ) from None
 
+        raise
+
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _get_owned_study_plan(
+    db: Session,
+    *,
+    student_id: int,
+    plan_id: int,
+) -> StudyPlan:
+    """Get a study plan only if it belongs to the requested student."""
+
+    plan = db.scalar(
+        select(StudyPlan).where(
+            StudyPlan.id == plan_id,
+            StudyPlan.user_id == student_id,
+        )
+    )
+
+    if plan is None:
+        raise StudyPlanNotFoundError(
+            "Study plan does not exist or does not belong to this student."
+        )
+
+    return plan
+
+
+def pause_study_plan(
+    db: Session,
+    *,
+    student_id: int,
+    plan_id: int,
+) -> StudyPlan:
+    """Pause an active study plan without modifying its tasks."""
+
+    try:
+        plan = _get_owned_study_plan(
+            db,
+            student_id=student_id,
+            plan_id=plan_id,
+        )
+
+        if plan.status != "active":
+            raise StudyPlanNotActiveError(
+                "Only an active study plan can be paused."
+            )
+
+        plan.status = "paused"
+
+        db.commit()
+        db.refresh(plan)
+
+        return plan
+
+    except (
+        StudyPlanNotFoundError,
+        StudyPlanNotActiveError,
+    ):
+        db.rollback()
+        raise
+
+    except Exception:
+        db.rollback()
+        raise
+
+
+def resume_study_plan(
+    db: Session,
+    *,
+    student_id: int,
+    plan_id: int,
+) -> StudyPlan:
+    """Resume a paused study plan if no other active plan exists."""
+
+    try:
+        plan = _get_owned_study_plan(
+            db,
+            student_id=student_id,
+            plan_id=plan_id,
+        )
+
+        if plan.status != "paused":
+            raise StudyPlanNotPausedError(
+                "Only a paused study plan can be resumed."
+            )
+
+        existing_active_plan_id = db.scalar(
+            select(StudyPlan.id).where(
+                StudyPlan.user_id == student_id,
+                StudyPlan.status == "active",
+                StudyPlan.id != plan.id,
+            )
+        )
+
+        if existing_active_plan_id is not None:
+            raise ActiveStudyPlanExistsError(
+                "The student already has an active study plan."
+            )
+
+        plan.status = "active"
+
+        db.commit()
+        db.refresh(plan)
+
+        return plan
+
+    except (
+        StudyPlanNotFoundError,
+        StudyPlanNotPausedError,
+        ActiveStudyPlanExistsError,
+    ):
+        db.rollback()
+        raise
+
+    except IntegrityError:
+        db.rollback()
+
+        # Protect against concurrent requests that activate
+        # another plan after the initial existence check.
+        existing_active_plan_id = db.scalar(
+            select(StudyPlan.id).where(
+                StudyPlan.user_id == student_id,
+                StudyPlan.status == "active",
+            )
+        )
+
+        if existing_active_plan_id is not None:
+            raise ActiveStudyPlanExistsError(
+                "The student already has an active study plan."
+            ) from None
+
+        raise
+
+    except Exception:
+        db.rollback()
+        raise
+
+def complete_study_plan(
+    db: Session,
+    *,
+    student_id: int,
+    plan_id: int,
+) -> StudyPlan:
+    """Complete an active study plan without deleting its tasks."""
+
+    try:
+        plan = _get_owned_study_plan(
+            db,
+            student_id=student_id,
+            plan_id=plan_id,
+        )
+
+        if plan.status != "active":
+            raise StudyPlanNotActiveError(
+                "Only an active study plan can be completed."
+            )
+
+        plan.status = "completed"
+
+        db.commit()
+        db.refresh(plan)
+
+        return plan
+
+    except (
+        StudyPlanNotFoundError,
+        StudyPlanNotActiveError,
+    ):
+        db.rollback()
         raise
 
     except Exception:

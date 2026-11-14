@@ -14,13 +14,17 @@ from backend.app.api.routes.questions import (
 from backend.app.api.routes.quiz_sessions import (
     router as quiz_sessions_router,
 )
+from backend.app.api.routes.study_plans import (
+    router as study_plans_router,
+)
 from backend.app.api.routes.tutor import (
     router as tutor_router,
 )
 from backend.app.api.routes.tutor_chat import (
     router as tutor_chat_router,
 )
-# 1. Khởi tạo ứng dụng FastAPI
+
+
 app = FastAPI(
     title="TOEIC Tutor Agent API",
     description=(
@@ -31,14 +35,15 @@ app = FastAPI(
 )
 
 
-# 2. Đăng ký Authentication Router
+# Register API routers.
 app.include_router(auth_router)
 app.include_router(questions_router)
 app.include_router(quiz_sessions_router)
 app.include_router(tutor_router)
 app.include_router(tutor_chat_router)
+app.include_router(study_plans_router)
 
-# 3. Xử lý lỗi HTTP 422 an toàn
+
 @app.exception_handler(RequestValidationError)
 async def safe_request_validation_error(
     request: Request,
@@ -54,13 +59,12 @@ async def safe_request_validation_error(
     )
 
 
-# 4. API kiểm tra trạng thái hệ thống
 @app.get(
     "/health",
     tags=["System"],
     summary="Check API health",
 )
 def health_check() -> dict[str, str]:
-    """Check whether the FastAPI application is running."""
+    """Check whether the API is running."""
 
     return {"status": "ok"}
