@@ -23,7 +23,9 @@ from backend.app.api.routes.tutor import (
 from backend.app.api.routes.tutor_chat import (
     router as tutor_chat_router,
 )
-
+from backend.app.api.routes.dashboard import (
+    router as dashboard_router,
+)
 
 app = FastAPI(
     title="TOEIC Tutor Agent API",
@@ -42,7 +44,7 @@ app.include_router(quiz_sessions_router)
 app.include_router(tutor_router)
 app.include_router(tutor_chat_router)
 app.include_router(study_plans_router)
-
+app.include_router(dashboard_router)
 
 @app.exception_handler(RequestValidationError)
 async def safe_request_validation_error(
