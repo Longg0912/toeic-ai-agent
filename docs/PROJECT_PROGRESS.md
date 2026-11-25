@@ -1,807 +1,422 @@
 # PROJECT PROGRESS
 
-## Thông tin dự án
-
-Tên: TOEIC Tutor Agent
-
-Đề tài:
-Xây dựng AI Agent gia sư cá nhân hóa
-hỗ trợ học và luyện thi TOEIC.
-
-Thư mục:
-D:\toeic-ai-agent
-
-Ngôn ngữ:
-Python 3.12
-
-## Giai đoạn 01: Project Foundation
-### 02A.3 - Alembic Migration
-
-Trạng thái: HOÀN THÀNH
-
-- [x] Cài đặt Alembic.
-- [x] Khởi tạo Alembic environment.
-- [x] Cấu hình alembic.ini.
-- [x] Cấu hình env.py.
-- [x] Kết nối Alembic với Base.metadata.
-- [x] Tạo initial migration bằng autogenerate.
-- [x] Review migration trước khi upgrade.
-- [x] Chạy alembic upgrade head.
-- [x] Kiểm tra 6 bảng Core và alembic_version.
-- [x] Xác nhận Alembic current khớp với head.
-- [x] Xác minh SQLite Foreign Keys = 1.
-- [x] Chạy 11 database tests thành công.
-- [x] Xác nhận hoàn thành 02A.3.
-
-Revision ID: 96035621403c
-Database: data/toeic.sqlite3
-Kết quả Pytest: 11 passed in 1.65s
-
-Bước tiếp theo: 02A.4 - Quiz Database.
-
-### 02A.4 - Quiz Database
-
-Trạng thái: ĐANG TRIỂN KHAI
-
-#### 02A.4.1 - SQLAlchemy Quiz Models
-
-Trạng thái: CHỜ KIỂM THỬ TỔNG HỢP
-
-- [x] Tạo models/quiz.py.
-- [x] Khai báo QuizSession.
-- [x] Khai báo QuizItem.
-- [x] Khai báo Attempt.
-- [x] Đăng ký 3 models mới.
-- [x] Kiểm thử 4 Quiz metadata tests.
-- [x] Kiểm tra SQLAlchemy nhận đủ 9 bảng.
-- [x] Xác nhận database SQLite chưa bị thay đổi.
-- [x] Chạy tổng hợp 15 database tests.
-- [x] Xác nhận hoàn thành 02A.4.1.
-
-Alembic hiện tại: 96035621403c
-SQLite hiện tại: 6 bảng Core + alembic_version
-
-#### 02A.4.2 - Migration
-#### 02A.4.2 - Quiz Migration
-
-Trạng thái: HOÀN THÀNH
-
-- [x] Tạo Alembic revision thứ hai.
-- [x] Kiểm tra down_revision.
-- [x] Review 3 bảng Quiz.
-- [x] Kiểm tra PK, FK, UNIQUE, CHECK.
-- [x] Kiểm tra indexes.
-- [x] Kiểm tra thứ tự upgrade và downgrade.
-- [x] Xác nhận không thay đổi Core ngoài dự kiến.
-- [x] Cập nhật test_migrations.py.
-- [x] Chạy 15 database tests thành công.
-- [x] Xác nhận hoàn thành 02A.4.2.
-
-Revision mới: da7ab3c9873a
-Revision trước: 96035621403c
-
-Kết quả: 15/15 PASSED.
-
-Bước tiếp theo:
-02A.4.3 - Upgrade SQLite và kiểm thử.
-
-Lưu ý:
-Chưa xác nhận migration Quiz đã được áp dụng
-trên database ứng dụng.
-
-### 02A.4.3 - Application Database Upgrade
-
-Status: COMPLETED
-
-Database: data/toeic.sqlite3
-
-Applied Revision: da7ab3c9873a
-Previous Revision: 96035621403c
-
-### Database Tables
-
-Core:
-- users
-- student_profiles
-- skills
-- questions
-- question_options
-- question_skills
-
-Quiz:
-- quiz_sessions
-- quiz_items
-- attempts
-
-Migration:
-- alembic_version
-
-Total: 10 tables
-
-### Verification Results
-
-- Alembic current matches head: PASS
-- SQLite Foreign Keys: ENABLED
-- Integrity Check: OK
-- Foreign Key Violations: 0
-- Quiz Constraint Tests: 9 PASSED
-- All Database Tests: 24 PASSED
-
-### Migration Status
-
-Quiz Migration: APPLIED AND VERIFIED
-
-Next: 02A.4.4 - Idempotent Seed Data
-
-#### 02A.4.4 - Seed TOEIC Part 5
-
-Trạng thái: ĐANG KIỂM THỬ
-
-- [ ] Kiểm tra revision da7ab3c9873a.
-- [ ] Sao lưu database trước khi seed.
-- [ ] Tạo scripts/__init__.py.
-- [ ] Tạo scripts/seed_toeic_part5.py.
-- [ ] Khai báo dữ liệu kỹ năng TOEIC.
-- [ ] Khai báo 6 câu hỏi Part 5.
-- [ ] Tạo logic phát hiện dữ liệu trùng.
-- [ ] Tạo logic rollback khi có xung đột.
-- [ ] Viết 4 Seed Tests.
-- [ ] Chạy 4 Seed Tests thành công.
-- [ ] Chạy tổng hợp 28 Database Tests.
-- [ ] Chạy seed lần thứ nhất.
-- [ ] Chạy seed lần thứ hai.
-- [ ] Xác nhận không tạo dữ liệu trùng.
-- [ ] Kiểm tra Integrity và Foreign Keys.
-- [ ] Cập nhật DATABASE_SCHEMA.md.
-- [ ] Xác nhận hoàn thành 02A.4.4.
-
-### Dữ liệu mẫu
-
-Skills: 5
-Questions: 6
-Options: 24
-Question-Skill Links: 7
-
-### Chính sách dữ liệu
-
-- Câu hỏi AI sinh được đánh dấu draft.
-- Không dùng để tính mastery chính thức.
-- Không seed tài khoản hoặc mật khẩu.
-- Không chỉnh sửa dữ liệu người dùng hiện có.
-
-### Bước tiếp theo
-
-02B - Authentication and Authorization.
-### 01B - Nhóm B: FastAPI Foundation
-
-Trạng thái: HOÀN THÀNH
-
-- [x] Xác nhận FastAPI, Uvicorn và HTTPX.
-- [x] Tạo backend/app/main.py.
-- [x] Khởi tạo FastAPI application.
-- [x] Tạo endpoint GET /health.
-- [x] Chạy Uvicorn trên cổng 8765.
-- [x] Kiểm tra GET /health trả về HTTP 200.
-- [x] Kiểm tra Swagger UI tại /docs.
-- [x] Tạo tests/api/test_health.py.
-- [x] Kiểm thử API: 2/2 PASSED.
-- [x] Kiểm thử database: 28/28 PASSED.
-- [x] Kiểm thử toàn bộ: 30/30 PASSED.
-- [x] Xác nhận hoàn thành FastAPI Foundation.
-
-### Kết quả
-
-FastAPI: 0.143.3
-Uvicorn: 0.54.0
-HTTPX: 0.28.1
-
-Local API:
-http://127.0.0.1:8765
-
-Health:
-http://127.0.0.1:8765/health
-
-Swagger UI:
-http://127.0.0.1:8765/docs
-
-Pytest:
-30 passed, 1 warning in 5.46s
-
-### Ghi chú
-
-- Cổng 8000 gặp WinError 10013.
-- Đã khởi động thành công trên cổng 8765.
-- Có StarletteDeprecationWarning liên quan HTTPX.
-- Chưa kết nối database vào API.
-- Chưa triển khai Authentication.
-- Chưa triển khai Quiz API.
-
-### Bước tiếp theo
-
-01C - Streamlit Frontend Foundation.
-Lưu ý:
-FastAPI của Giai đoạn 01B chưa được xác nhận
-triển khai. Cần hoàn thiện ứng dụng FastAPI
-trước khi xây dựng endpoint xác thực.
-### 01C - Streamlit Frontend Foundation
-
-Trạng thái: HOÀN THÀNH
-
-- [x] Tạo frontend/__init__.py.
-- [x] Tạo frontend/api_client.py.
-- [x] Tạo frontend/app.py.
-- [x] Hiển thị giao diện TOEIC AI Tutor.
-- [x] Chạy Streamlit trên cổng 8502.
-- [x] Kết nối FastAPI trên cổng 8765.
-- [x] Hiển thị thông báo kết nối thành công.
-- [x] Xử lý lỗi khi FastAPI bị tắt.
-- [x] Streamlit vẫn hoạt động khi Backend ngừng chạy.
-- [x] Chạy 5 Frontend Tests thành công.
-- [x] Chạy tổng hợp 35 Tests thành công.
-- [x] Xác nhận hoàn thành 01C.
-
-### Kết quả
-
-Frontend: http://127.0.0.1:8502
-Backend: http://127.0.0.1:8765
-
-Pytest: 35 passed, 1 warning in 6.03s
-
-### Bước tiếp theo
-
-02B - Authentication & Authorization.
-### Nhóm A: Cấu trúc và cấu hình
-
-- [ ] Kiểm tra Python.
-- [ ] Kiểm tra quyền ghi thư mục.
-- [ ] Tạo môi trường ảo .venv.
-- [ ] Kích hoạt môi trường ảo.
-- [ ] Chọn Python interpreter trong VS Code.
-- [ ] Tạo cấu trúc thư mục dự án.
-- [ ] Tạo requirements.txt.
-- [ ] Tạo .gitignore.
-- [ ] Tạo .env.example.
-- [ ] Tạo README.md.
-- [ ] Tạo PROJECT_PROGRESS.md.
-- [ ] Cài đặt dependencies.
-- [ ] Kiểm tra dependencies.
-- [ ] Khởi tạo Git.
-- [ ] Kiểm tra Git không theo dõi dữ liệu nhạy cảm.
-- [ ] Xác nhận Nhóm A thành công.
-
-### 02B.1 - Password Hashing & Verification
-
-Trạng thái: HOÀN THÀNH
-
-- [x] Cài đặt pwdlib và Argon2.
-- [x] Triển khai hash_password().
-- [x] Triển khai verify_password().
-- [x] Viết 8 bài kiểm thử bảo mật mật khẩu.
-- [x] Chạy 8/8 Password Security Tests.
-- [x] Chạy tổng hợp 43/43 Tests.
-
-Kết quả:
-43 passed, 1 warning in 8.05s
-
-Bước tiếp theo:
-02B.2.1 - Registration Schemas.
-### 02B.2.1 - Registration Schemas
-
-Trạng thái: HOÀN THÀNH
-
-- [x] Cài đặt email-validator.
-- [x] Tạo backend/app/schemas/__init__.py.
-- [x] Tạo backend/app/schemas/auth.py.
-- [x] Xây dựng UserRegisterRequest.
-- [x] Xây dựng UserPublic.
-- [x] Kiểm tra email và mật khẩu.
-- [x] Ngăn người dùng tự khai báo role.
-- [x] Không xuất password_hash qua UserPublic.
-- [x] Tạo tests/schemas/test_auth_schemas.py.
-- [x] Chạy 10 Registration Schema Tests.
-- [x] Chạy tổng hợp 53 Tests.
-- [x] Xác nhận hoàn thành 02B.2.1.
-
-Kết quả:
-53 passed, 1 warning in 6.06s
-
-Database Migration: Không thay đổi.
-
-Bước tiếp theo:
-02B.2.2 - Registration Service.
-### 02B.2.2 - Registration Service
-
-Trạng thái: HOÀN THÀNH
-
-- [x] Xác minh User Model.
-- [x] Tạo backend/app/services/__init__.py.
-- [x] Tạo backend/app/services/registration.py.
-- [x] Triển khai find_user_by_email().
-- [x] Triển khai register_student().
-- [x] Băm mật khẩu bằng Argon2id.
-- [x] Gán role student từ backend.
-- [x] Xử lý email trùng.
-- [x] Xử lý IntegrityError và rollback.
-- [x] Chỉ trả về UserPublic.
-- [x] Tạo tests/services/test_registration.py.
-- [x] Chạy 7 Registration Service Tests.
-- [x] Chạy tổng hợp 60 Tests.
-- [x] Xác nhận hoàn thành 02B.2.2.
-
-### Kết quả
-
-Pytest: 60 passed, 1 warning in 7.86s
-
-Database Migration: Không thay đổi.
-Alembic Revision: da7ab3c9873a
-
-### Bước tiếp theo
-
-02B.2.3 - Registration API Endpoint.
-
-Chưa triển khai:
-- POST /auth/register
-- Login API
+## 1. Thông tin dự án
+
+- **Tên dự án:** TOEIC Tutor Agent
+- **Đề tài:** Xây dựng AI Agent gia sư cá nhân hóa hỗ trợ học và luyện thi TOEIC.
+- **Thư mục:** `D:\toeic-ai-agent`
+- **Ngôn ngữ:** Python 3.12
+- **Frontend:** Streamlit
+- **Backend:** FastAPI
+- **AI Model:** Google Gemini API
+
+## 2. Trạng thái tổng quan
+
+Dự án đã hoàn thành nền tảng Backend, Database, Authentication, RAG, Gemini Tutor Agent, Student Modeling, Adaptive Recommendation, Dashboard và Study Plan ở các mức độ khác nhau.
+
+Các chức năng giao diện Dashboard, Study Plan và Text Selection AI Tutor đã được triển khai và commit.
+
+| Hạng mục | Trạng thái |
+|---|---|
+| Project Foundation | HOÀN THÀNH |
+| Database và Alembic | HOÀN THÀNH CÁC MILESTONE ĐÃ TRIỂN KHAI |
+| Authentication và Authorization | HOÀN THÀNH |
+| Streamlit Authentication UI | HOÀN THÀNH |
+| TOEIC Question Bank và Quiz Backend | ĐÃ TRIỂN KHAI |
+| RAG và Document Processing | ĐÃ TRIỂN KHAI |
+| Gemini Tutor Agent | ĐÃ TRIỂN KHAI |
+| Student Modeling | ĐÃ TRIỂN KHAI |
+| Adaptive Recommendation | ĐÃ TRIỂN KHAI |
+| Study Plan Backend | ĐÃ TRIỂN KHAI |
+| Dashboard Backend và Frontend | ĐÃ TRIỂN KHAI |
+| Study Plan Frontend | ĐÃ TRIỂN KHAI |
+| Text Selection AI Tutor | MVP HOÀN THÀNH |
+| Reading Practice Part 5–7 | TIẾP TỤC PHÁT TRIỂN |
+| Full Test Mode 100 câu / 75 phút | CHƯA XÁC NHẬN HOÀN THÀNH |
+| Thực hành bài tập trực tiếp từ Study Plan | CHƯA HOÀN THÀNH |
+
+Lưu ý: Trạng thái "đã triển khai" không đồng nghĩa mọi chức năng liên quan đã hoàn thiện hoặc đã được kiểm thử trên môi trường production.
+
+## 3. Kiến trúc và công nghệ
+
+### 3.1. Backend
+
+- FastAPI
+- Uvicorn
+- SQLAlchemy 2.x
+- Alembic
+- SQLite
+- Pydantic
 - JWT Authentication
-- Role-based Authorization
-### 02B.2.3 - Registration API Endpoint
+- Role-Based Access Control
+
+### 3.2. Frontend
+
+- Streamlit
+- API Clients
+- Session State
+- Dashboard UI
+- Study Plan UI
+- Text Selection Component
+
+### 3.3. AI và RAG
+
+- Google Gemini API (`google-genai`)
+- Gemini Function Calling
+- ChromaDB
+- Sentence Transformers
+- Document Processing
+- Retrieval-Augmented Generation
+
+### 3.4. Testing
+
+- Pytest
+- FastAPI TestClient
+- HTTPX
+- SQLite test database
+- Frontend component tests
+
+## 4. Các hạng mục đã triển khai
+
+### 4.1. Project Foundation
+
+- [x] Khởi tạo cấu trúc dự án.
+- [x] Thiết lập môi trường Python.
+- [x] Thiết lập requirements.txt.
+- [x] Thiết lập .gitignore.
+- [x] Tạo .env.example.
+- [x] Khởi tạo Git repository.
+- [x] Tạo FastAPI application.
+- [x] Tạo endpoint `GET /health`.
+- [x] Tích hợp Streamlit với Backend.
+- [x] Thiết lập Pytest.
+
+### 4.2. Database và Alembic
+
+- [x] SQLAlchemy Models.
+- [x] User và Student Profile.
+- [x] TOEIC Question Models.
+- [x] Quiz Session, Quiz Item và Attempt.
+- [x] Alembic Migration.
+- [x] SQLite Foreign Key Enforcement.
+- [x] Seed dữ liệu TOEIC Part 5.
+- [x] RAG database tables.
+- [x] Document ownership.
+- [x] Study Plan database tables.
+
+Các migration quan trọng đã được triển khai:
+
+- `a91e6c4d2f80`: Global RAG tables.
+- `e2f7a6c91d34`: Page number.
+- `f1a9c3d7e205`: Personal document ownership.
+- `f2f8eab7a67a`: Study Plan tables.
+
+Lưu ý: Cần đối chiếu Alembic revision hiện tại trên máy với lịch sử migration trước khi thực hiện migration mới.
+
+### 4.3. Authentication và Authorization
+
+- [x] Password hashing bằng Argon2id.
+- [x] Password verification.
+- [x] Registration Schema.
+- [x] Registration Service.
+- [x] `POST /auth/register`.
+- [x] Login Schema.
+- [x] Authentication Service.
+- [x] `POST /auth/login`.
+- [x] JWT HS256.
+- [x] JWT Bearer Dependency.
+- [x] `GET /auth/me`.
+- [x] Current User Authentication.
+- [x] Role-Based Access Control.
+- [x] Student và Admin roles.
+- [x] Resource Ownership.
+- [x] Authorization Security Tests.
+- [x] Streamlit Authentication API Client.
+- [x] Login/Register UI.
+- [x] Session State.
+- [x] Logout.
+- [x] Student Profile UI.
+
+### 4.4. TOEIC Question Bank và Quiz Backend
+
+- [x] Question Models.
+- [x] Question Options.
+- [x] Question-Skill Relationships.
+- [x] Quiz Session.
+- [x] Quiz Items.
+- [x] Attempts.
+- [x] Quiz Database Migration.
+- [x] Quiz Session API.
+- [x] Submit và grading theo answer key.
+- [x] Quiz History và Review.
+- [x] Ownership validation.
+- [x] Quiz API tests.
+
+Phạm vi luyện Reading mục tiêu:
+
+- Reading Practice Mode: luyện từng Part.
+- Full Test Mode: Part 5–7, 100 câu, 75 phút.
+
+Full Test Mode và luồng luyện tập hoàn chỉnh vẫn cần tiếp tục được triển khai và xác nhận.
+
+### 4.5. RAG và Document Processing
+
+- [x] Document Processing.
+- [x] Embedding Service.
+- [x] ChromaDB Integration.
+- [x] Indexing Service.
+- [x] Retrieval Service.
+- [x] Global RAG Tables.
+- [x] Personal Document Ownership.
+- [x] Page Number Metadata.
+- [x] RAG Tools cho Tutor Agent.
+
+### 4.6. Gemini Tutor Agent
+
+- [x] Tích hợp Google Gemini API.
+- [x] Gemini Tutor Service.
+- [x] Function Calling.
+- [x] Tool Registry.
+- [x] Recommendation Tool.
+- [x] Global RAG Tool.
+- [x] Trusted Student Context.
+- [x] Tutor Chat API.
+- [x] Tutor API Client.
+- [x] Tutor Chat Tests.
+
+Gemini được sử dụng để giải thích và hỗ trợ học tập. Việc chấm điểm câu hỏi TOEIC chính thức vẫn dựa trên answer key do hệ thống quản lý.
+
+### 4.7. Student Modeling và Adaptive Recommendation
 
-Trạng thái: HOÀN THÀNH
+- [x] Student Modeling Services.
+- [x] Theo dõi kết quả học tập.
+- [x] Phân tích kỹ năng.
+- [x] Adaptive Recommendation.
+- [x] Kết nối thông tin học tập với Tutor Agent.
 
-- [x] Tạo Authentication Router.
-- [x] Tạo dependency get_db().
-- [x] Triển khai POST /auth/register.
-- [x] Trả về HTTP 201 khi đăng ký thành công.
-- [x] Trả về HTTP 409 khi email trùng.
-- [x] Xử lý HTTP 422 không làm lộ mật khẩu.
-- [x] Đăng ký auth_router trong main.py.
-- [x] Giữ nguyên GET /health.
-- [x] Tạo tests/api/test_register.py.
-- [x] Chạy 9 Registration API Tests thành công.
-- [x] Chạy tổng hợp 69 Tests thành công.
-- [x] Xác nhận hoàn thành 02B.2.3.
+### 4.8. Study Plan
 
-### Kết quả
+Backend:
 
-Pytest: 69 passed, 1 warning in 7.92s
+- [x] Study Plan Database Models.
+- [x] Study Plan Service.
+- [x] Adaptive Planner.
+- [x] Study Plan Lifecycle API.
+- [x] Tạo Study Plan.
+- [x] Xem Study Plan.
+- [x] Pause Study Plan.
+- [x] Resume Study Plan.
+- [x] Complete Study Plan.
 
-API đã triển khai:
-- GET /health
-- POST /auth/register
+Frontend:
 
-Database Migration: Không thay đổi.
-Alembic Revision: da7ab3c9873a
+- [x] Study Plan API Client.
+- [x] Study Plan UI.
+- [x] Study Plan Tests.
 
-### Bước tiếp theo
-### 02B.3.2 - Login Schema & Authentication Service
-
-Trạng thái: HOÀN THÀNH
-
-- [x] Tạo backend/app/schemas/login.py.
-- [x] Triển khai UserLoginRequest.
-- [x] Triển khai TokenResponse.
-- [x] Tạo backend/app/services/authentication.py.
-- [x] Triển khai InvalidCredentialsError.
-- [x] Triển khai login_user().
-- [x] Tái sử dụng find_user_by_email().
-- [x] Tái sử dụng verify_password().
-- [x] Kiểm tra trạng thái is_active.
-- [x] Giảm chênh lệch thời gian với tài khoản không tồn tại.
-- [x] Không cấp JWT khi xác thực thất bại.
-- [x] Viết 9 Login Schema Tests.
-- [x] Viết 8 Authentication Service Tests.
-- [x] Chạy tổng hợp 100 Tests thành công.
-- [x] Xác nhận hoàn thành 02B.3.2.
-
-### Kết quả kiểm thử
+Các chức năng cần tiếp tục:
 
-Login Schema Tests: 9 PASSED
-Authentication Service Tests: 8 PASSED
+- [ ] Thực hiện bài tập trực tiếp từ từng nhiệm vụ trong Study Plan.
+- [ ] Theo dõi hoàn thành từng nhiệm vụ.
+- [ ] Ôn tập câu trả lời sai.
+- [ ] Ôn từ vựng theo chủ đề.
+- [ ] Hỗ trợ word families.
+- [ ] Cân nhắc flashcards.
+- [ ] Tạo quiz ôn tập kiến thức đã học.
 
-Tổng cộng:
-100 passed, 1 warning in 21.68s
+### 4.9. Dashboard
 
-### Authentication
+Backend:
 
-Password Hashing: Argon2id
-JWT Algorithm: HS256
-Access Token Lifetime: 30 minutes
+- [x] Dashboard Overview API.
+- [x] Performance API.
+- [x] Skills API.
+- [x] Activity API.
+- [x] Study Plan Dashboard API.
 
-### Database
+Frontend:
 
-Không thay đổi SQLAlchemy Models.
-Không tạo Alembic Migration mới.
+- [x] Dashboard API Client.
+- [x] Dashboard UI.
+- [x] Hiển thị tiến độ học tập.
+- [x] Hiển thị hiệu suất.
+- [x] Hiển thị kỹ năng cần cải thiện.
+- [x] Dashboard UI Tests.
 
-Revision: da7ab3c9873a
+### 4.10. Text Selection AI Tutor
 
-### Chưa triển khai
+- [x] Tutor Selection Context Schema.
+- [x] Selection Context Service.
+- [x] Kiểm tra quyền sở hữu Quiz Session.
+- [x] Kiểm tra nội dung được chọn.
+- [x] Kiểm tra ngữ cảnh câu hỏi và bài đọc.
+- [x] Kiểm soát việc tiết lộ đáp án khi bài chưa nộp.
+- [x] Tích hợp Selection Context vào Tutor Chat API.
+- [x] Gemini nhận ngữ cảnh bài tập.
+- [x] Text Selection Component.
+- [x] Floating Ask AI Toolbar.
+- [x] Tích hợp vào Quiz UI.
+- [x] Tutor multi-turn chat theo ngữ cảnh được chọn.
+- [x] Backend và Frontend Tests.
+- [x] Kiểm tra thao tác chọn văn bản và hỏi AI trên trình duyệt.
 
-- POST /auth/login
-- JWT Bearer Authentication Dependency
-- Current User Authentication
-- Role-based Authorization
-- Rate Limiting
-
-### Bước tiếp theo
-
-02B.3.3 - Login API Endpoint.
-### 02B.3.3 - Login API & JWT Endpoint
-
-Trạng thái: HOÀN THÀNH
-
-- [x] Triển khai POST /auth/login.
-- [x] Tái sử dụng Authentication Service.
-- [x] Trả về HTTP 200 và JWT Access Token.
-- [x] Trả về HTTP 401 khi xác thực thất bại.
-- [x] Xử lý HTTP 422 an toàn.
-- [x] Không làm lộ mật khẩu trong response.
-- [x] Bổ sung Cache-Control: no-store.
-- [x] Tạo tests/api/test_login.py.
-- [x] Chạy 14 Login API Tests thành công.
-- [x] Chạy tổng hợp 114 Tests thành công.
-- [x] Xác nhận hoàn thành 02B.3.3.
-
-### Kết quả
+**Trạng thái:** MVP hoàn thành. Có thể chọn văn bản trong bài luyện tập, gửi cho AI và nhận giải thích theo ngữ cảnh.
 
-Pytest: 114 passed, 1 warning in 16.21s
-
-API Authentication:
-- POST /auth/register
-- POST /auth/login
-
-JWT Algorithm: HS256
-Access Token Lifetime: 30 minutes
-
-Database Migration: Không thay đổi.
-Alembic Revision: da7ab3c9873a
-
-### Bước tiếp theo
-
-02B.4 - Current User Authentication.
-### 02B.4.1 - JWT Bearer Dependency & Current User
-
-Trạng thái: HOÀN THÀNH
-
-- [x] Tạo backend/app/api/auth_deps.py.
-- [x] Khai báo HTTPBearer Security Scheme.
-- [x] Triển khai credentials_exception().
-- [x] Triển khai get_current_user().
-- [x] Đọc Authorization: Bearer JWT.
-- [x] Tái sử dụng decode_access_token().
-- [x] Tra cứu User trong SQLite bằng SQLAlchemy.
-- [x] Kiểm tra trạng thái is_active.
-- [x] Trả HTTP 401 khi thiếu JWT.
-- [x] Trả HTTP 401 khi JWT sai hoặc hết hạn.
-- [x] Trả HTTP 401 khi User không tồn tại.
-- [x] Trả HTTP 401 khi User bị vô hiệu hóa.
-- [x] Tạo tests/api/test_auth_deps.py.
-- [x] Sử dụng SQLite tạm và JWT Secret Key riêng.
-- [x] Chạy 13 Authentication Dependency Tests.
-- [x] Chạy tổng hợp 127 Tests.
-- [x] Xác nhận hoàn thành 02B.4.1.
-
-### Kết quả
-
-Pytest: 127 passed, 1 warning in 21.65s
-
-Authentication Dependency:
-get_current_user()
-
-Security:
-HTTPBearer + HS256 JWT
-
-Successful Result:
-Authenticated User ORM object
+## 5. Kết quả kiểm thử
 
-Authentication Failure:
-HTTP 401 Unauthorized
+Các kết quả dưới đây là kết quả đã được ghi nhận trong quá trình triển khai, không phải kết quả chạy lại sau các commit tài liệu.
 
-Database Migration:
-Không thay đổi.
-
-Alembic Revision: da7ab3c9873a
-
-### Bước tiếp theo
-### 02B.4.2 - GET /auth/me & API Tests
-
-Trạng thái: HOÀN THÀNH
-
-- [x] Triển khai GET /auth/me.
-- [x] Tái sử dụng get_current_user().
-- [x] Trả về UserPublic.
-- [x] Kiểm tra Bearer JWT.
-- [x] Xử lý HTTP 401 khi thiếu hoặc sai JWT.
-- [x] Từ chối JWT hết hạn.
-- [x] Từ chối tài khoản không tồn tại.
-- [x] Từ chối tài khoản inactive.
-- [x] Không trả mật khẩu hoặc password_hash.
-- [x] Kiểm tra đúng chủ sở hữu JWT.
-- [x] Tạo tests/api/test_me.py.
-- [x] Kiểm thử sử dụng SQLite tạm.
-- [x] Chạy 14 GET /auth/me Tests.
-- [x] Chạy tổng hợp 141 Tests.
-- [x] Xác nhận hoàn thành 02B.4.2.
-
-Kết quả:
-141 passed, 1 warning in 25.89s
-
-API hiện có:
-- GET /health
-- POST /auth/register
-- POST /auth/login
-- GET /auth/me
-
-Database Migration: Không thay đổi.
-Alembic Revision: da7ab3c9873a
-
-Kiểm tra thủ công Swagger UI:
-Chưa xác nhận.
+### 5.1. Các mốc kiểm thử
 
-Bước tiếp theo:
-### 02B.5.1 - Role-Based Access Control
+- Database và Alembic: các nhóm test đã hoàn thành theo từng milestone.
+- Authentication và Authorization: các nhóm test đã hoàn thành theo từng milestone.
+- Study Plan Service và API: đã kiểm thử qua các milestone.
+- Dashboard API và Client: đã kiểm thử.
+- Dashboard UI: 4 tests passed.
+- Study Plan UI: 7 tests passed.
+- Text Selection: các nhóm test Schema, Service, API Client và Component đã được kiểm thử.
 
-Trạng thái: HOÀN THÀNH
+### 5.2. Kết quả toàn bộ test suite gần nhất được báo cáo
 
-- [x] Tạo backend/app/api/authorization.py.
-- [x] Khai báo UserRole: student, admin.
-- [x] Triển khai require_role().
-- [x] Tái sử dụng get_current_user().
-- [x] Kiểm tra role trực tiếp từ User ORM.
-- [x] Trả HTTP 403 khi không đủ quyền.
-- [x] Giữ HTTP 401 khi chưa xác thực hợp lệ.
-- [x] Hỗ trợ nhiều role được phép.
-- [x] Từ chối cấu hình role không hợp lệ.
-- [x] Không tin role claim trong JWT.
-- [x] Tạo tests/api/test_authorization.py.
-- [x] Kiểm thử với SQLite tạm.
-- [x] Kiểm thử Student và Admin.
-- [x] Kiểm thử thăng quyền và hạ quyền.
-- [x] Chạy 16 RBAC Tests.
-- [x] Chạy tổng hợp 157 Tests.
-- [x] Xác nhận hoàn thành 02B.5.1.
-
-### Kết quả
-
-Pytest: 157 passed, 1 warning in 28.73s
-
-Authentication:
-get_current_user()
-
-Authorization:
-require_role(*allowed_roles)
-
-Supported Roles:
-- student
-- admin
-
-Permission Source:
-User.role from SQLite
+**811 passed, 3 warnings, 0 failed.**
 
-Authentication Failure:
-HTTP 401 Unauthorized
+Thời gian chạy được báo cáo: 143.27 giây.
 
-Authorization Failure:
-HTTP 403 Forbidden
+Ba warnings là Starlette deprecation warnings liên quan đến `HTTP_422_UNPROCESSABLE_ENTITY` trong một số test API.
 
-Database Migration: Không thay đổi.
-Alembic Revision: da7ab3c9873a
+Cần chạy lại toàn bộ test suite để xác nhận trạng thái mới nhất trước khi phát hành hoặc đưa ra kết luận về chất lượng hiện tại.
 
-### Bước tiếp theo
+## 6. Kiểm tra khởi chạy ứng dụng
 
-### 02B.5.2 - Resource Ownership & Access Control
+### 6.1. Backend
 
-Trạng thái: HOÀN THÀNH
+Lệnh chạy:
 
-- [x] Tạo backend/app/api/ownership.py.
-- [x] Triển khai get_owned_quiz_session().
-- [x] Tái sử dụng require_role("student").
-- [x] Tái sử dụng get_current_user().
-- [x] Kiểm tra QuizSession.id.
-- [x] Kiểm tra QuizSession.user_id = current_user.id.
-- [x] Thực hiện ownership filtering trong SQL.
-- [x] Trả HTTP 401 nếu chưa xác thực.
-- [x] Trả HTTP 403 nếu không có role student.
-- [x] Trả HTTP 404 nếu tài nguyên không tồn tại.
-- [x] Trả HTTP 404 nếu tài nguyên thuộc người khác.
-- [x] Kiểm thử ngăn truy cập và sửa bài của người khác.
-- [x] Kiểm thử bằng SQLite tạm.
-- [x] Chạy 14 Resource Ownership Tests.
-- [x] Chạy tổng hợp 171 Tests.
-- [x] Xác nhận hoàn thành 02B.5.2.
-
-### Kết quả
-
-Pytest: 171 passed, 1 warning in 40.94s
-
-Ownership Dependency:
-get_owned_quiz_session()
-
-Resource:
-QuizSession
-
-Owner:
-QuizSession.user_id
-
-Authenticated User:
-current_user.id
-
-Authentication Failure: HTTP 401
-Authorization Failure: HTTP 403
-Missing or Non-owned Resource: HTTP 404
-
-Database Migration: Không thay đổi.
-Alembic Revision: da7ab3c9873a
-
-### Bước tiếp theo
-
-### 02B.5.3 - Authorization Security Tests
+```powershell
+python -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8765
+```
 
-Trạng thái: HOÀN THÀNH
-
-- [x] Tạo tests/security/test_authorization_security.py.
-- [x] Kiểm thử IDOR/BOLA giữa các học viên.
-- [x] Kiểm tra request trái phép không sửa dữ liệu.
-- [x] Kiểm thử giả mạo user_id và owner_id.
-- [x] Kiểm thử JWT có role claim giả.
-- [x] Kiểm thử JWT có owner claim giả.
-- [x] Kiểm thử JWT bị giả mạo chữ ký.
-- [x] Kiểm thử JWT claims bắt buộc.
-- [x] Từ chối thuật toán JWT không được phép.
-- [x] Kiểm thử tài khoản bị vô hiệu hóa.
-- [x] Kiểm thử thay đổi role.
-- [x] Kiểm thử Quiz Session ID không hợp lệ.
-- [x] Kiểm thử bằng SQLite tạm.
-- [x] Chạy 24 Authorization Security Tests.
-- [x] Chạy tổng hợp 195 Tests.
-- [x] Xác nhận hoàn thành 02B.5.3.
+Địa chỉ:
 
-### Kết quả
+- API: `http://127.0.0.1:8765`
+- Health: `http://127.0.0.1:8765/health`
+- Swagger UI: `http://127.0.0.1:8765/docs`
 
-Pytest: 195 passed, 1 warning in 47.54s
+Đã xác nhận trên trình duyệt:
 
-### Authentication & Authorization
+- Health trả về `{"status":"ok"}`.
+- Swagger UI hiển thị API.
 
-- JWT Authentication: HOÀN THÀNH
-- Current User Authentication: HOÀN THÀNH
-- Role-Based Access Control: HOÀN THÀNH
-- QuizSession Resource Ownership: HOÀN THÀNH
-- Authorization Security Tests: HOÀN THÀNH
+### 6.2. Frontend
 
-### Database
+Lệnh chạy:
 
-Không thay đổi SQLAlchemy Models.
-Không tạo Alembic Migration.
+```powershell
+python -m streamlit run frontend\app.py --server.port 8502
+```
 
-Alembic Revision: da7ab3c9873a
+Địa chỉ:
 
-### Known Limitations
+`http://localhost:8502`
 
-- Chưa tích hợp Ownership vào API Quiz thực tế.
-- Chưa triển khai Rate Limiting.
-- Chưa có Audit Logging.
-- Chưa có Token Revocation.
-- Chưa thực hiện kiểm thử bảo mật production.
+Đã xác nhận giao diện Dashboard hiển thị trên trình duyệt.
 
-### Bước tiếp theo
+Cần tiếp tục kiểm tra các trang Study Planner, AI Tutor và TOEIC Quiz trong lần xác minh giao diện tiếp theo.
 
-### 02B.6.1 - Streamlit Authentication API Client
+## 7. Các vấn đề và giới hạn còn lại
 
-Trạng thái: HOÀN THÀNH
+### 7.1. Study Plan
 
-- [x] Tạo frontend/auth_api_client.py.
-- [x] Triển khai AuthAPIClient.
-- [x] Triển khai PublicUser.
-- [x] Triển khai LoginResult.
-- [x] Triển khai AuthAPIError.
-- [x] Triển khai register().
-- [x] Triển khai login().
-- [x] Triển khai get_me().
-- [x] Gửi Bearer JWT qua Authorization Header.
-- [x] Xử lý các mã lỗi HTTP.
-- [x] Xử lý Timeout và Connection Error.
-- [x] Không làm lộ mật khẩu hoặc JWT trong thông báo lỗi.
-- [x] Ngăn HTTP Redirect ngoài dự kiến.
-- [x] Yêu cầu HTTPS với Backend ngoài localhost.
-- [x] Tạo tests/frontend/test_auth_api_client.py.
-- [x] Kiểm thử bằng httpx.MockTransport.
-- [x] Chạy 18 Authentication API Client Tests.
-- [x] Chạy tổng hợp 213 Tests.
-- [x] Xác nhận hoàn thành 02B.6.1.
+- Chưa có luồng thực hiện bài tập trực tiếp từ từng nhiệm vụ.
+- Chưa hoàn thiện hệ thống ôn tập câu sai.
+- Chưa hoàn thiện ôn từ vựng theo chủ đề và word families.
 
-### Kết quả
+### 7.2. TOEIC Practice
 
-Pytest: 213 passed, 1 warning in 36.48s
+- Tiếp tục hoàn thiện Reading Practice Mode.
+- Hoàn thiện quy trình Full Test Mode.
+- Kiểm tra số lượng câu, thời gian làm bài và quy trình chấm điểm.
+- Tiếp tục kiểm duyệt nội dung do AI tạo trước khi đưa vào Question Bank.
 
-API Client:
-frontend/auth_api_client.py
+### 7.3. AI Tutor
 
-Class:
-AuthAPIClient
+- Tiếp tục đánh giá chất lượng câu trả lời của Gemini.
+- Đánh giá độ chính xác của RAG.
+- Kiểm tra khả năng giải thích câu hỏi theo ngữ cảnh.
+- Tiếp tục cải thiện trải nghiệm Tutor trong quá trình làm bài.
 
-Methods:
-- register(email, password)
-- login(email, password)
-- get_me(access_token)
+### 7.4. Technical Debt
 
-Backend URL:
-http://127.0.0.1:8765
+- Xử lý các Starlette deprecation warnings.
+- Tiếp tục kiểm tra quyền sở hữu tài nguyên ở các API.
+- Đánh giá logging và error handling.
+- Rà soát cấu hình môi trường trước khi triển khai production.
 
-### Known Limitations
+## 8. Roadmap tiếp theo
 
-- Chưa xây dựng giao diện đăng ký/đăng nhập.
-- Chưa triển khai Streamlit Session State.
-- Chưa có chức năng đăng xuất.
-- Chưa kiểm thử tích hợp Frontend–Backend thực tế.
+### Ưu tiên 1 – Hoàn thiện Study Plan Practice
 
-### Database
+- [ ] Thiết kế luồng thực hiện bài tập từ Study Plan.
+- [ ] Liên kết nhiệm vụ học tập với Question Bank.
+- [ ] Lưu kết quả hoàn thành từng nhiệm vụ.
+- [ ] Tạo luồng ôn tập câu trả lời sai.
+- [ ] Xây dựng ôn từ vựng theo chủ đề.
+- [ ] Xem xét flashcards.
 
-Không thay đổi SQLAlchemy Models.
-Không tạo Alembic Migration mới.
+### Ưu tiên 2 – Hoàn thiện TOEIC Reading Practice
 
-Alembic Revision: da7ab3c9873a
+- [ ] Hoàn thiện luyện tập từng Part.
+- [ ] Bổ sung và kiểm thử Part 6–7.
+- [ ] Hoàn thiện Full Test Mode.
+- [ ] Kiểm thử giới hạn 100 câu và 75 phút.
+- [ ] Hoàn thiện báo cáo kết quả bài thi.
 
-### Bước tiếp theo
+### Ưu tiên 3 – Cải thiện AI Tutor
 
-### 02B.6.2 - Streamlit Login/Register UI & Session State
+- [ ] Đánh giá chất lượng câu trả lời.
+- [ ] Đánh giá chất lượng truy xuất RAG.
+- [ ] Cải thiện giải thích đáp án và các lựa chọn sai.
+- [ ] Tối ưu trải nghiệm hỏi AI trong bài luyện tập.
 
-Trạng thái: HOÀN THÀNH
+### Ưu tiên 4 – Hoàn thiện tài liệu và chất lượng
 
-- [x] Hoàn thành giao diện đăng ký.
-- [x] Hoàn thành giao diện đăng nhập.
-- [x] Hoàn thành quản lý phiên JWT.
-- [x] Hoàn thành trang hồ sơ học viên.
-- [x] Hoàn thành chức năng đăng xuất.
-- [x] Kiểm thử 14 Authentication UI Tests.
-- [x] Kiểm thử toàn dự án: 227 passed.
-- [x] Kiểm tra giao diện thực tế.
+- [ ] Cập nhật DATABASE_SCHEMA.md.
+- [ ] Rà soát README.md.
+- [ ] Duy trì test suite.
+- [ ] Xử lý deprecation warnings.
+- [ ] Rà soát bảo mật trước khi triển khai.
 
-Kết quả: 227 passed, 1 warning in 38.65s
+## 9. Lịch sử commit quan trọng
 
-Bước tiếp theo:
-02B.6.3 - Frontend–Backend Integration Tests
-### Nhóm B: FastAPI
+Các commit gần nhất đã xác nhận:
 
-- [ ] Tạo FastAPI application.
-- [ ] Tạo endpoint GET /health.
-- [ ] Kiểm tra /health.
-- [ ] Kiểm tra /docs.
+| Commit | Nội dung |
+|---|---|
+| `75c301c` | Dashboard API và services |
+| `6d05bb8` | Text Selection AI Tutor |
+| `6e1cc35` | Dashboard và Study Plan UI |
 
-### Nhóm C: Streamlit
+Các commit tài liệu sau đó:
 
-- [ ] Tạo giao diện đầu tiên.
-- [ ] Kết nối đến FastAPI.
-- [ ] Hiển thị trạng thái Backend.
-- [ ] Xử lý lỗi kết nối.
+| Commit | Nội dung |
+|---|---|
+| `4ad6488` | Cập nhật README |
 
-### Nhóm D: Pytest
+Lưu ý: Commit `4ad6488` được tạo sau lần push code gần nhất và cần được push lên GitHub.
 
-- [ ] Viết test GET /health.
-- [ ] Chạy pytest.
-- [ ] Xác nhận kết quả kiểm thử.
+## 10. Nguyên tắc phát triển tiếp theo
 
-## Kết quả kiểm tra
+- Tiếp tục phát triển trên kiến trúc hiện tại.
+- Không xây dựng lại các module đã hoàn thành nếu không có lý do kỹ thuật.
+- Mỗi bước chỉ triển khai một nhóm chức năng rõ ràng.
+- Kiểm tra file hiện tại trước khi chỉnh sửa code.
+- Chạy test liên quan sau mỗi thay đổi.
+- Chạy toàn bộ test suite trước các milestone lớn.
+- Không đưa API keys, `.env`, database cá nhân hoặc dữ liệu nhạy cảm lên Git.
+- Không đưa nội dung AI tạo vào Question Bank chính thức khi chưa được kiểm duyệt.
 
-Chưa được xác nhận trên máy của người thực hiện.
+---
 
-## Vấn đề cần theo dõi
+**Cập nhật tiến độ:** 25/11/2026
 
-- Đã từng gặp WinError 5 khi tạo .venv trên ổ D.
-- Cần xác nhận lỗi quyền truy cập đã được xử lý.
-
-## Các chức năng chưa triển khai
-
-- Database
-- Authentication
-- TOEIC Question Bank
-- Scoring Engine
-- Student Modeling
-- Adaptive Recommendation
-- RAG
-- Tutor Agent
-- Giao diện học tập hoàn chỉnh
-
-## Bước tiếp theo
-
-Hoàn thành và xác nhận Nhóm A.
-
-Sau khi được xác nhận, chuyển sang Nhóm B.
+**Trạng thái:** Dự án đã có nền tảng Backend, Frontend, AI Tutor, RAG, Dashboard và Study Plan. Giai đoạn tiếp theo tập trung vào hoàn thiện luồng thực hành và ôn tập trực tiếp từ Study Plan, đồng thời hoàn thiện TOEIC Reading Practice.
