@@ -105,7 +105,123 @@ class TutorAPIClient:
             )
 
         return normalized
+    @staticmethod
+    def _validate_selection_context(
+        context: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Validate and normalize a text-selection context."""
 
+        if not isinstance(context, dict):
+            raise ValueError(
+                "selection_context phải là dictionary."
+            )
+
+        allowed_fields = {
+            "selected_text",
+            "source_type",
+            "quiz_session_id",
+            "quiz_item_id",
+            "part_number",
+            "surrounding_text",
+        }
+
+        unknown_fields = set(context) - allowed_fields
+
+        if unknown_fields:
+            raise ValueError(
+                "selection_context chứa trường không được hỗ trợ."
+            )
+
+        selected_text = context.get("selected_text")
+
+        if not isinstance(selected_text, str):
+            raise ValueError("selected_text phải là chuỗi.")
+
+        selected_text = selected_text.strip()
+
+        if not selected_text:
+            raise ValueError("selected_text không được để trống.")
+
+        if len(selected_text) > 2000:
+            raise ValueError(
+                "selected_text không được vượt quá 2000 ký tự."
+            )
+
+        source_type = context.get("source_type")
+
+        allowed_source_types = {
+            "quiz_question",
+            "quiz_option",
+            "reading_passage",
+            "explanation",
+            "general",
+        }
+
+        if source_type not in allowed_source_types:
+            raise ValueError("source_type không hợp lệ.")
+
+        normalized: dict[str, Any] = {
+            "selected_text": selected_text,
+            "source_type": source_type,
+        }
+
+        quiz_session_id = context.get("quiz_session_id")
+        quiz_item_id = context.get("quiz_item_id")
+
+        if (quiz_session_id is None) != (quiz_item_id is None):
+            raise ValueError(
+                "quiz_session_id và quiz_item_id "
+                "phải được cung cấp cùng nhau."
+            )
+
+        for field_name, value in (
+            ("quiz_session_id", quiz_session_id),
+            ("quiz_item_id", quiz_item_id),
+        ):
+            if value is not None:
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, int)
+                    or value <= 0
+                ):
+                    raise ValueError(
+                        f"{field_name} phải là số nguyên dương."
+                    )
+
+                normalized[field_name] = value
+
+        part_number = context.get("part_number")
+
+        if part_number is not None:
+            if (
+                isinstance(part_number, bool)
+                or not isinstance(part_number, int)
+                or part_number not in (5, 6, 7)
+            ):
+                raise ValueError(
+                    "part_number chỉ được nhận giá trị 5, 6 hoặc 7."
+                )
+
+            normalized["part_number"] = part_number
+
+        surrounding_text = context.get("surrounding_text")
+
+        if surrounding_text is not None:
+            if not isinstance(surrounding_text, str):
+                raise ValueError(
+                    "surrounding_text phải là chuỗi."
+                )
+
+            surrounding_text = surrounding_text.strip()
+
+            if len(surrounding_text) > 6000:
+                raise ValueError(
+                    "surrounding_text không được vượt quá 6000 ký tự."
+                )
+
+            normalized["surrounding_text"] = surrounding_text
+
+        return normalized
     # =================================================
     # Error handling
     # =================================================
@@ -317,8 +433,9 @@ class TutorAPIClient:
         self,
         message: str,
         chat_session_id: int | None = None,
+        selection_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Send a message and receive the assistant response."""
+        """Send a message, optionally with selected-text context."""
 
         normalized_message = self._validate_chat_message(message)
 
@@ -332,6 +449,13 @@ class TutorAPIClient:
                 "chat_session_id",
             )
             payload["chat_session_id"] = chat_session_id
+
+        if selection_context is not None:
+            payload["selection_context"] = (
+                self._validate_selection_context(
+                    selection_context
+                )
+            )
 
         data = self._request_json(
             "POST",
@@ -350,7 +474,7 @@ class TutorAPIClient:
             or not title.strip()
         ):
             raise TutorAPIError(
-                "Dữ liệu hội thoại từ backend không đầy đủ."
+                "Dữ liệu hội thoại từ Tutor API không đầy đủ."
             )
 
         user_message = self._parse_chat_message(
@@ -372,17 +496,18 @@ class TutorAPIClient:
 
     def list_sessions(
         self,
-        limit: int = 50,
+        *,
+        limit: int = 20,
         offset: int = 0,
     ) -> dict[str, Any]:
-        """List the current user's chat sessions."""
+        """List the current user's Tutor chat sessions."""
 
         if (
             isinstance(limit, bool)
             or not isinstance(limit, int)
             or not 1 <= limit <= 50
         ):
-            raise ValueError("limit phải nằm trong khoảng 1–50.")
+            raise ValueError("limit phải là số nguyên từ 1 đến 50.")
 
         if (
             isinstance(offset, bool)
@@ -394,23 +519,24 @@ class TutorAPIClient:
         data = self._request_json(
             "GET",
             "/tutor/sessions",
-            params={
-                "limit": limit,
-                "offset": offset,
-            },
+            params={"limit": limit, "offset": offset},
         )
 
         items = data.get("items")
         total = data.get("total")
+        returned_limit = data.get("limit")
+        returned_offset = data.get("offset")
 
         if (
             not isinstance(items, list)
             or isinstance(total, bool)
             or not isinstance(total, int)
             or total < 0
+            or returned_limit != limit
+            or returned_offset != offset
         ):
             raise TutorAPIError(
-                "Dữ liệu danh sách hội thoại không hợp lệ."
+                "Dữ liệu danh sách hội thoại từ Tutor API không đầy đủ."
             )
 
         parsed_items: list[dict[str, Any]] = []
@@ -418,14 +544,14 @@ class TutorAPIClient:
         for item in items:
             if not isinstance(item, dict):
                 raise TutorAPIError(
-                    "Một hội thoại trong danh sách không hợp lệ."
+                    "Dữ liệu một hội thoại từ Tutor API không hợp lệ."
                 )
 
             session_id = item.get("id")
             title = item.get("title")
+            message_count = item.get("message_count")
             created_at = item.get("created_at")
             updated_at = item.get("updated_at")
-            message_count = item.get("message_count")
 
             if (
                 isinstance(session_id, bool)
@@ -433,31 +559,31 @@ class TutorAPIClient:
                 or session_id <= 0
                 or not isinstance(title, str)
                 or not title.strip()
-                or not isinstance(created_at, str)
-                or not isinstance(updated_at, str)
                 or isinstance(message_count, bool)
                 or not isinstance(message_count, int)
                 or message_count < 0
+                or not isinstance(created_at, str)
+                or not isinstance(updated_at, str)
             ):
                 raise TutorAPIError(
-                    "Thông tin hội thoại không đầy đủ."
+                    "Dữ liệu một hội thoại từ Tutor API không đầy đủ."
                 )
 
             parsed_items.append(
                 {
                     "id": session_id,
                     "title": title,
+                    "message_count": message_count,
                     "created_at": created_at,
                     "updated_at": updated_at,
-                    "message_count": message_count,
                 }
             )
 
         return {
             "items": parsed_items,
             "total": total,
-            "limit": data.get("limit", limit),
-            "offset": data.get("offset", offset),
+            "limit": returned_limit,
+            "offset": returned_offset,
         }
 
     def get_session(

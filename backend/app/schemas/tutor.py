@@ -9,6 +9,7 @@ from pydantic import (
     ConfigDict,
     Field,
     field_validator,
+    model_validator,
 )
 
 
@@ -37,6 +38,100 @@ class TutorExplainResponse(BaseModel):
     explanation: str = Field(min_length=1)
 
 
+class TutorSelectionContext(BaseModel):
+    """Context describing the text selected by a student."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    selected_text: str = Field(
+        min_length=1,
+        max_length=2000,
+        description="Text selected by the student.",
+    )
+
+    source_type: Literal[
+        "quiz_question",
+        "quiz_option",
+        "reading_passage",
+        "explanation",
+        "general",
+    ] = Field(
+        default="general",
+        description="The type of content containing the selection.",
+    )
+
+    quiz_session_id: int | None = Field(
+        default=None,
+        gt=0,
+        description="Quiz session containing the selected content.",
+    )
+
+    quiz_item_id: int | None = Field(
+        default=None,
+        gt=0,
+        description="Quiz item containing the selected content.",
+    )
+
+    part_number: int | None = Field(
+        default=None,
+        ge=5,
+        le=7,
+        description="TOEIC Reading part number.",
+    )
+
+    surrounding_text: str | None = Field(
+        default=None,
+        max_length=6000,
+        description="Text surrounding the selected content.",
+    )
+
+    @field_validator("selected_text")
+    @classmethod
+    def validate_selected_text(cls, value: str) -> str:
+        """Reject selections containing only whitespace."""
+
+        value = value.strip()
+
+        if not value:
+            raise ValueError(
+                "Selected text must not be empty."
+            )
+
+        return value
+
+    @field_validator("surrounding_text")
+    @classmethod
+    def validate_surrounding_text(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        """Normalize optional surrounding text."""
+
+        if value is None:
+            return None
+
+        value = value.strip()
+
+        return value or None
+
+    @model_validator(mode="after")
+    def validate_quiz_references(
+        self,
+    ) -> "TutorSelectionContext":
+        """Require quiz session and item IDs together."""
+
+        has_session_id = self.quiz_session_id is not None
+        has_item_id = self.quiz_item_id is not None
+
+        if has_session_id != has_item_id:
+            raise ValueError(
+                "quiz_session_id and quiz_item_id "
+                "must be provided together."
+            )
+
+        return self
+
+
 class TutorChatRequest(BaseModel):
     """Request schema for sending a message to AI Tutor."""
 
@@ -52,6 +147,14 @@ class TutorChatRequest(BaseModel):
         min_length=1,
         max_length=4000,
         description="The student's message.",
+    )
+
+    selection_context: TutorSelectionContext | None = Field(
+        default=None,
+        description=(
+            "Optional context describing text selected "
+            "by the student."
+        ),
     )
 
     @field_validator("message")

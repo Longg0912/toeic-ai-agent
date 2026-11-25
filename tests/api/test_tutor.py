@@ -31,7 +31,10 @@ from backend.app.services.gemini_tutor import (
     GeminiConfigurationError,
     GeminiServiceError,
 )
-
+from backend.app.services.selection_context_service import (
+    SelectionContextNotFoundError,
+    SelectionTextMismatchError,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_CONFIG = PROJECT_ROOT / "alembic.ini"
@@ -917,3 +920,165 @@ def test_tutor_chat_rejects_unknown_session(
     )
 
     assert response.status_code == 404
+
+
+def test_tutor_chat_uses_selection_context(
+    tutor_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Selection context is passed to Gemini with the user question."""
+
+    client, question_ids, owner_headers, _ = tutor_client
+
+    captured: dict[str, object] = {}
+
+    def fake_build_context(
+        db,
+        *,
+        student_id: int,
+        context,
+    ) -> str:
+        captured["student_id"] = student_id
+        captured["context"] = context
+
+        return (
+            "SOURCE: TOEIC Quiz Practice\n"
+            "SELECTED TEXT:\n"
+            "by Friday\n"
+            "QUESTION CONTENT:\n"
+            "Submit the report by Friday."
+        )
+
+    def fake_chat(
+        messages: list[dict[str, str]],
+        **kwargs: object,
+    ) -> str:
+        captured["messages"] = messages
+        return "By Friday diễn tả thời hạn hoàn thành."
+
+    monkeypatch.setattr(
+        "backend.app.api.routes.tutor_chat.build_selection_context",
+        fake_build_context,
+    )
+
+    monkeypatch.setattr(
+        "backend.app.api.routes.tutor_chat.chat_with_tutor",
+        fake_chat,
+    )
+
+    response = client.post(
+        "/tutor/chat",
+        json={
+            "message": "Tại sao dùng by?",
+            "selection_context": {
+                "selected_text": "by Friday",
+                "source_type": "quiz_question",
+                "quiz_session_id": 10,
+                "quiz_item_id": 25,
+                "part_number": 5,
+            },
+        },
+        headers=owner_headers,
+    )
+
+    assert response.status_code == 200
+
+    assert captured["student_id"] == question_ids["owner"]
+
+    context = captured["context"]
+
+    assert context.selected_text == "by Friday"
+
+    messages = captured["messages"]
+
+    assert isinstance(messages, list)
+    assert len(messages) == 1
+
+    ai_message = messages[0]["content"]
+
+    assert "[TOEIC_SELECTION_CONTEXT]" in ai_message
+    assert "by Friday" in ai_message
+    assert "[STUDENT_QUESTION]" in ai_message
+    assert "Tại sao dùng by?" in ai_message
+
+    # The saved user message must not expose internal context metadata.
+    assert response.json()["user_message"]["content"] == (
+        "Tại sao dùng by?"
+    )
+
+
+def test_tutor_chat_returns_404_for_unavailable_selection(
+    tutor_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unavailable or unauthorized quiz content returns HTTP 404."""
+
+    client, _, owner_headers, _ = tutor_client
+
+    def fake_build_context(*args, **kwargs):
+        raise SelectionContextNotFoundError(
+            "Quiz item not found."
+        )
+
+    monkeypatch.setattr(
+        "backend.app.api.routes.tutor_chat.build_selection_context",
+        fake_build_context,
+    )
+
+    response = client.post(
+        "/tutor/chat",
+        json={
+            "message": "Giải thích phần này.",
+            "selection_context": {
+                "selected_text": "by Friday",
+                "source_type": "quiz_question",
+                "quiz_session_id": 10,
+                "quiz_item_id": 25,
+            },
+        },
+        headers=owner_headers,
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == (
+        "Selected quiz content not found."
+    )
+
+
+def test_tutor_chat_returns_422_for_selection_mismatch(
+    tutor_client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Text that does not match the quiz item returns HTTP 422."""
+
+    client, _, owner_headers, _ = tutor_client
+
+    def fake_build_context(*args, **kwargs):
+        raise SelectionTextMismatchError(
+            "Selected text does not match."
+        )
+
+    monkeypatch.setattr(
+        "backend.app.api.routes.tutor_chat.build_selection_context",
+        fake_build_context,
+    )
+
+    response = client.post(
+        "/tutor/chat",
+        json={
+            "message": "Giải thích phần này.",
+            "selection_context": {
+                "selected_text": "unrelated text",
+                "source_type": "quiz_question",
+                "quiz_session_id": 10,
+                "quiz_item_id": 25,
+            },
+        },
+        headers=owner_headers,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == (
+        "Selected text does not match "
+        "the requested learning content."
+    )

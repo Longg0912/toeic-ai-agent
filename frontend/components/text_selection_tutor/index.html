@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root { color-scheme: light dark; font-family: sans-serif; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      overflow: hidden;
+      color: var(--text-color, #262730);
+      background: transparent;
+      font-size: 14px;
+    }
+    #root {
+      position: relative;
+      width: 100%;
+      border: 1px solid var(--border-color, #d8dbe2);
+      border-radius: 10px;
+      padding: 14px;
+      background: var(--secondary-background-color, transparent);
+      overflow: visible;
+    }
+    .hint {
+      margin: 0 0 12px;
+      color: var(--secondary-text-color, #8b93a1);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .question {
+      margin: 0 0 14px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      user-select: text;
+      cursor: text;
+      font-size: 15px;
+    }
+    #options {
+      display: grid;
+      gap: 8px;
+    }
+    .option {
+      padding: 9px 11px;
+      border: 1px solid var(--border-color, rgba(128,128,128,.2));
+      border-radius: 8px;
+      background: var(--background-color, rgba(128,128,128,.06));
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+      user-select: text;
+      cursor: text;
+    }
+    .option strong { margin-right: 7px; }
+    #selection-toolbar {
+      position: fixed;
+      z-index: 999999;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 6px;
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 9px;
+      background: #172554;
+      box-shadow: 0 5px 18px rgba(0,0,0,.3);
+    }
+    #selection-toolbar.visible { display: flex; }
+    #ask {
+      border: 0;
+      border-radius: 7px;
+      padding: 8px 13px;
+      color: white;
+      background: #2563eb;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #ask:hover { background: #1d4ed8; }
+    #status {
+      color: #dbeafe;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <main id="root">
+    <p class="hint">Bôi đen từ, cụm từ, câu hoặc đoạn văn trong câu hỏi/đáp án để hỏi gia sư AI.</p>
+    <section id="question" class="question" data-source-type="quiz_question"></section>
+    <section id="options"></section>
+  </main>
+
+  <div id="selection-toolbar" role="toolbar" aria-label="Hỏi AI về nội dung được chọn">
+    <button id="ask" type="button">Hỏi AI</button>
+    <span id="status">Đã chọn văn bản</span>
+  </div>
+
+  <script>
+    (() => {
+      const root = document.getElementById("root");
+      const questionNode = document.getElementById("question");
+      const optionsNode = document.getElementById("options");
+      const toolbar = document.getElementById("selection-toolbar");
+      const askButton = document.getElementById("ask");
+      const statusNode = document.getElementById("status");
+
+      let currentSelection = null;
+      let lastSentSelection = null;
+      let resizeObserver = null;
+
+      function sendMessage(type, extra = {}) {
+        window.parent.postMessage({
+          isStreamlitMessage: true,
+          type,
+          ...extra
+        }, "*");
+      }
+
+      function setFrameHeight() {
+        requestAnimationFrame(() => {
+          const height = Math.ceil(root.getBoundingClientRect().height + 18);
+          sendMessage("streamlit:setFrameHeight", {
+            height: Math.max(180, Math.min(1200, height))
+          });
+        });
+      }
+
+      function sourceForNode(node) {
+        if (!node) return null;
+        const element = node.nodeType === Node.ELEMENT_NODE
+          ? node
+          : node.parentElement;
+        return element ? element.closest("[data-source-type]") : null;
+      }
+
+      function getSelectionPayload() {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed || !selection.rangeCount) {
+          return null;
+        }
+
+        const selectedText = selection.toString().trim();
+        if (!selectedText || selectedText.length > 2000) return null;
+
+        const range = selection.getRangeAt(0);
+        const startSource = sourceForNode(range.startContainer);
+        const endSource = sourceForNode(range.endContainer);
+
+        if (!startSource || startSource !== endSource) return null;
+        if (!root.contains(startSource)) return null;
+
+        const sourceType = startSource.dataset.sourceType;
+        if (!["quiz_question", "quiz_option"].includes(sourceType)) {
+          return null;
+        }
+
+        return {
+          selected_text: selectedText,
+          source_type: sourceType,
+          surrounding_text: root.innerText.slice(0, 6000),
+          range_rect: range.getBoundingClientRect()
+        };
+      }
+
+      function hideToolbar() {
+        toolbar.classList.remove("visible");
+      }
+
+      function updateSelectionToolbar() {
+        const payload = getSelectionPayload();
+        if (!payload) {
+          // Do not clear a valid selection while the learner is moving
+          // the pointer from the selected text to the toolbar.
+          if (!toolbar.matches(":hover")) {
+            currentSelection = null;
+            hideToolbar();
+          }
+          return;
+        }
+
+        currentSelection = payload;
+        const rect = payload.range_rect;
+        const toolbarWidth = toolbar.offsetWidth || 150;
+        const toolbarHeight = toolbar.offsetHeight || 42;
+
+        let left = rect.left + (rect.width / 2) - (toolbarWidth / 2);
+        left = Math.max(8, Math.min(
+          window.innerWidth - toolbarWidth - 8,
+          left
+        ));
+
+        let top = rect.bottom + 8;
+        if (top + toolbarHeight > window.innerHeight - 6) {
+          top = Math.max(6, rect.top - toolbarHeight - 8);
+        }
+
+        toolbar.style.left = `${left}px`;
+        toolbar.style.top = `${top}px`;
+        statusNode.textContent = `Đã chọn ${payload.selected_text.length} ký tự`;
+        toolbar.classList.add("visible");
+      }
+
+      function render(args) {
+        const componentArgs = args || {};
+        currentSelection = null;
+        lastSentSelection = null;
+        hideToolbar();
+
+        questionNode.textContent = componentArgs.question_text || "";
+        optionsNode.replaceChildren();
+
+        const options = Array.isArray(componentArgs.options)
+          ? componentArgs.options
+          : [];
+
+        for (const option of options) {
+          const row = document.createElement("div");
+          row.className = "option";
+          row.dataset.sourceType = "quiz_option";
+
+          const label = document.createElement("strong");
+          label.textContent = `${option.option_key || ""}.`;
+
+          const content = document.createElement("span");
+          content.textContent = option.content || "";
+
+          row.append(label, content);
+          optionsNode.appendChild(row);
+        }
+
+        setFrameHeight();
+      }
+
+      // selectionchange also catches keyboard selection and cases where
+      // mouseup is handled outside the text node.
+      document.addEventListener("selectionchange", () => {
+        requestAnimationFrame(updateSelectionToolbar);
+      });
+      root.addEventListener("mouseup", updateSelectionToolbar);
+      root.addEventListener("keyup", updateSelectionToolbar);
+
+      // Preserve the browser selection when the floating action is pressed.
+      askButton.addEventListener("pointerdown", event => {
+        event.preventDefault();
+      });
+
+      askButton.addEventListener("click", () => {
+        if (!currentSelection) return;
+
+        const payload = {
+          selected_text: currentSelection.selected_text,
+          source_type: currentSelection.source_type,
+          surrounding_text: currentSelection.surrounding_text,
+          event_id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+        };
+
+        const signature = `${payload.source_type}:${payload.selected_text}:${payload.event_id}`;
+        if (signature === lastSentSelection) return;
+        lastSentSelection = signature;
+
+        sendMessage("streamlit:setComponentValue", {
+          value: payload,
+          dataType: "json"
+        });
+
+        hideToolbar();
+        currentSelection = null;
+        setFrameHeight();
+      });
+
+      window.addEventListener("resize", () => {
+        if (currentSelection) updateSelectionToolbar();
+        setFrameHeight();
+      });
+
+      window.addEventListener("message", event => {
+        const data = event.data || {};
+        if (data.type === "streamlit:render") render(data.args);
+      });
+
+      if (window.ResizeObserver) {
+        resizeObserver = new ResizeObserver(setFrameHeight);
+        resizeObserver.observe(root);
+      }
+
+      sendMessage("streamlit:componentReady", {apiVersion: 1});
+      setFrameHeight();
+    })();
+  </script>
+</body>
+</html>

@@ -7,13 +7,19 @@ import streamlit as st
 from frontend.auth_ui import get_active_token
 from frontend.quiz_api_client import QuizAPIClient, QuizAPIError
 from frontend.tutor_api_client import TutorAPIClient, TutorAPIError
-
+from frontend.text_selection_component import (
+    render_text_selection_component,
+)
 
 ACTIVE_QUIZ_KEY = "toeic_active_quiz"
 RESULT_KEY = "toeic_quiz_result"
 HISTORY_KEY = "toeic_quiz_history"
 DETAIL_KEY = "toeic_quiz_history_detail"
 TUTOR_EXPLANATIONS_KEY = "toeic_tutor_explanations"
+
+# Text Selection AI Tutor state
+SELECTION_CHATS_KEY = "toeic_selection_chats"
+SELECTION_EVENTS_KEY = "toeic_selection_events"
 
 SKILL_OPTIONS = [
     ("Tất cả kỹ năng", None),
@@ -118,12 +124,167 @@ def _render_create_form(api_base_url: str, token: str) -> None:
     st.rerun()
 
 
+def _build_selection_context(
+    selection: dict[str, str],
+    *,
+    session_id: int,
+    item_id: int,
+) -> dict[str, Any]:
+    """Build the API context for a selected Part 5 quiz snippet."""
+
+    if (
+        isinstance(session_id, bool)
+        or not isinstance(session_id, int)
+        or session_id <= 0
+    ):
+        raise ValueError("quiz_session_id phải là số nguyên dương.")
+
+    if (
+        isinstance(item_id, bool)
+        or not isinstance(item_id, int)
+        or item_id <= 0
+    ):
+        raise ValueError("quiz_item_id phải là số nguyên dương.")
+
+    selected_text = selection.get("selected_text")
+    source_type = selection.get("source_type")
+    surrounding_text = selection.get("surrounding_text", "")
+
+    if not isinstance(selected_text, str) or not selected_text.strip():
+        raise ValueError("Không có nội dung văn bản hợp lệ được chọn.")
+
+    if source_type not in {"quiz_question", "quiz_option"}:
+        raise ValueError("Loại nội dung được chọn không hợp lệ.")
+
+    context: dict[str, Any] = {
+        "selected_text": selected_text.strip(),
+        "source_type": source_type,
+        "quiz_session_id": session_id,
+        "quiz_item_id": item_id,
+        "part_number": 5,
+    }
+
+    if isinstance(surrounding_text, str) and surrounding_text.strip():
+        context["surrounding_text"] = surrounding_text.strip()[:6000]
+
+    return context
+
+
+def _render_selection_tutor(
+    api_base_url: str,
+    token: str,
+    *,
+    session_id: int,
+    item_id: int,
+    selection: dict[str, str],
+) -> None:
+    """Render a multi-turn AI Tutor conversation for selected quiz text."""
+
+    chats = st.session_state.get(SELECTION_CHATS_KEY, {})
+    if not isinstance(chats, dict):
+        chats = {}
+
+    chat_key = f"{session_id}:{item_id}"
+    context = _build_selection_context(
+        selection,
+        session_id=session_id,
+        item_id=item_id,
+    )
+
+    thread = chats.get(chat_key)
+
+    # A different selected phrase starts a separate conversation so
+    # previous turns cannot accidentally be interpreted against new text.
+    if (
+        not isinstance(thread, dict)
+        or thread.get("selection_context", {}).get("selected_text")
+        != context["selected_text"]
+        or thread.get("selection_context", {}).get("source_type")
+        != context["source_type"]
+    ):
+        next_input_version = (
+            thread.get("input_version", 0) + 1
+            if isinstance(thread, dict)
+            else 0
+        )
+        thread = {
+            "selection_context": context,
+            "chat_session_id": None,
+            "messages": [],
+            "input_version": next_input_version,
+        }
+        chats[chat_key] = thread
+        st.session_state[SELECTION_CHATS_KEY] = chats
+
+    with st.container(border=True):
+        st.markdown("**🤖 Hỏi AI về nội dung được chọn**")
+        st.caption(f'Đang giải thích: “{context["selected_text"]}”')
+
+        for message in thread.get("messages", []):
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        input_key = (
+            f"toeic_selection_prompt_{session_id}_{item_id}_"
+            f"{thread.get('input_version', 0)}"
+        )
+
+        prompt = st.text_area(
+            "Câu hỏi của bạn",
+            key=input_key,
+            height=80,
+            placeholder=(
+                "Ví dụ: Tại sao câu này dùng giới từ này? "
+                "Hãy giải thích ngữ pháp và cho ví dụ khác."
+            ),
+        )
+
+        if st.button(
+            "Gửi câu hỏi",
+            key=f"toeic_selection_send_{session_id}_{item_id}",
+            type="primary",
+            disabled=not prompt.strip(),
+        ):
+            try:
+                with st.spinner("Gia sư AI đang phân tích..."):
+                    with TutorAPIClient(
+                        base_url=api_base_url,
+                        access_token=token,
+                    ) as client:
+                        response = client.send_message(
+                            message=prompt,
+                            chat_session_id=thread.get("chat_session_id"),
+                            # Re-send the selected context on every turn.
+                            # The backend stores only the user's plain question.
+                            selection_context=context,
+                        )
+
+            except (TutorAPIError, ValueError) as exc:
+                st.error(str(exc))
+
+            else:
+                thread["chat_session_id"] = response["chat_session_id"]
+                thread.setdefault("messages", []).extend(
+                    [
+                        response["user_message"],
+                        response["assistant_message"],
+                    ]
+                )
+                thread["input_version"] = (
+                    thread.get("input_version", 0) + 1
+                )
+                chats[chat_key] = thread
+                st.session_state[SELECTION_CHATS_KEY] = chats
+                st.rerun()
+
+
 def _render_active_quiz(
     api_base_url: str,
     token: str,
     quiz: dict[str, Any],
 ) -> None:
-    """Render questions and submit the user's answers."""
+    """Render questions, text selection tutoring and answer submission."""
+
     session_id = quiz["id"]
     items = sorted(
         quiz.get("items", []),
@@ -139,14 +300,83 @@ def _render_active_quiz(
         st.warning("Bài luyện hiện không có câu hỏi.")
         return
 
-    with st.form(f"toeic_submit_quiz_{session_id}"):
-        for item in items:
-            item_id = item["id"]
-            position = item["position"]
-            answer_key = f"toeic_answer_{session_id}_{item_id}"
+    for item in items:
+        item_id = item["id"]
+        position = item["position"]
+        answer_key = f"toeic_answer_{session_id}_{item_id}"
 
+        with st.container(border=True):
             st.markdown(f"**Câu {position}**")
-            st.write(item["content"])
+
+            options = [
+                {
+                    "option_key": option["option_key"],
+                    "content": option["content"],
+                }
+                for option in item.get("options", [])
+            ]
+
+            # This component must stay outside st.form so browser text
+            # selection can trigger a Streamlit rerun and return its value.
+            try:
+                selection_event = render_text_selection_component(
+                    item["content"],
+                    options,
+                    key=f"toeic_selection_{session_id}_{item_id}",
+                    height=260,
+                )
+            except (TypeError, ValueError) as exc:
+                st.error(
+                    "Không thể hiển thị vùng chọn văn bản: "
+                    f"{exc}"
+                )
+                selection_event = None
+
+            event_key = f"{session_id}:{item_id}"
+            processed_events = st.session_state.get(
+                SELECTION_EVENTS_KEY,
+                {},
+            )
+
+            if not isinstance(processed_events, dict):
+                processed_events = {}
+
+            if (
+                selection_event is not None
+                and processed_events.get(event_key)
+                != selection_event["event_id"]
+            ):
+                processed_events[event_key] = selection_event["event_id"]
+                st.session_state[SELECTION_EVENTS_KEY] = (
+                    processed_events
+                )
+
+                # The tutor helper starts a fresh thread when the selected
+                # text differs, while preserving a unique widget key.
+                _render_selection_tutor(
+                    api_base_url,
+                    token,
+                    session_id=session_id,
+                    item_id=item_id,
+                    selection=selection_event,
+                )
+
+            else:
+                chats = st.session_state.get(SELECTION_CHATS_KEY, {})
+                thread = (
+                    chats.get(event_key)
+                    if isinstance(chats, dict)
+                    else None
+                )
+
+                if isinstance(thread, dict):
+                    _render_selection_tutor(
+                        api_base_url,
+                        token,
+                        session_id=session_id,
+                        item_id=item_id,
+                        selection=thread["selection_context"],
+                    )
 
             option_map = {
                 option["option_key"]: option["content"]
@@ -155,12 +385,11 @@ def _render_active_quiz(
             option_keys = list(option_map.keys())
 
             st.radio(
-                "Chọn đáp án",
+                "Chọn đáp án (A/B/C/D)",
                 options=option_keys,
                 index=None,
-                format_func=lambda key, mapping=option_map: (
-                    f"{key}. {mapping[key]}"
-                ),
+                format_func=lambda key: key,
+                horizontal=True,
                 key=answer_key,
             )
 
@@ -170,13 +399,12 @@ def _render_active_quiz(
                     "Kỹ năng: " + ", ".join(skill_codes)
                 )
 
-            st.divider()
-
-        submit_clicked = st.form_submit_button(
-            "Nộp bài và xem kết quả",
-            type="primary",
-            use_container_width=True,
-        )
+    submit_clicked = st.button(
+        "Nộp bài và xem kết quả",
+        type="primary",
+        use_container_width=True,
+        key=f"toeic_submit_quiz_{session_id}",
+    )
 
     if not submit_clicked:
         return
@@ -232,7 +460,6 @@ def _render_active_quiz(
         st.session_state.pop(answer_key, None)
 
     st.rerun()
-
 
 def _render_review_items(
     items: list[dict[str, Any]],
